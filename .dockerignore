@@ -1,0 +1,9 @@
+.git
+.gitignore
+.idea
+.mvn
+target
+*.md
+*.log
+node_modules
+

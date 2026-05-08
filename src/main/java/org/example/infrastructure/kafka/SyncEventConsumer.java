@@ -5,12 +5,11 @@ import io.smallrye.mutiny.Uni;
 import io.smallrye.reactive.messaging.kafka.KafkaRecord;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
+import org.example.application.port.out.AddressEnrichmentPort;
 import org.example.domain.entity.Address;
 import org.example.domain.entity.Collector;
-import org.example.domain.entity.Material;
 import org.example.infrastructure.event.SyncAddressEvent;
 import org.example.infrastructure.event.SyncCollectorEvent;
-import org.example.infrastructure.event.SyncMaterialEvent;
 import org.example.infrastructure.repository.AddressRepository;
 import org.example.infrastructure.repository.CollectorRepository;
 import org.example.infrastructure.repository.MaterialRepository;
@@ -28,9 +27,12 @@ public class SyncEventConsumer {
     AddressRepository addressRepository;
 
     @Inject
+    AddressEnrichmentPort addressEnrichmentPort;
+
+    @Inject
     CollectorRepository collectorRepository;
 
-    @Incoming("sync-addresses")
+    @Incoming("addresses-sync")
     @Blocking
     public Uni<Void> consumeAddress(KafkaRecord<String, SyncAddressEvent> record) {
         SyncAddressEvent event = record.getPayload();
@@ -45,9 +47,22 @@ public class SyncEventConsumer {
                 event.longitude()
         );
 
-        return addressRepository.upsert(address)
-                .invoke(() -> LOG.info("Address synced: {}", event.id()))
-                .onFailure().invoke(ex -> LOG.error("Failed to sync address", ex));
+        if (address.getLatitude() != null && address.getLongitude() != null) {
+            return addressRepository.upsert(address)
+                    .invoke(() -> LOG.info("Address synced: {}", event.id()))
+                    .onFailure().invoke(ex -> LOG.error("Failed to sync address", ex));
+        }
+
+        return addressEnrichmentPort.enrich(address)
+                .flatMap(enriched -> addressRepository.upsert(enriched)
+                        .invoke(() -> LOG.info("Address enriched & synced: {}", enriched.getId()))
+                )
+                .onFailure().recoverWithUni(ex -> {
+                    LOG.error("Failed to enrich address: {}", event.id(), ex);
+                    // persist without coords to keep the address available
+                    return addressRepository.upsert(address)
+                            .invoke(() -> LOG.info("Address synced without coords: {}", event.id()));
+                });
     }
 
     @Incoming("collector-sync")

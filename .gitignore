@@ -14,6 +14,8 @@ target/
 *.ipr
 AGENTS.md
 /specs
+.agent-work
+.agentbridge
 .ollamassist
 ### Eclipse ###
 .apt_generated

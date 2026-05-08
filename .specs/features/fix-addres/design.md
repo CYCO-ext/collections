@@ -3,8 +3,8 @@
 Overview
 --------
 Add an AddressEnrichment component in the infrastructure layer to validate and enrich addresses received from the Register microservice. The component composes external calls:
-- Nominatim (OpenStreetMap) — primary geocoding source to convert a normalized address to lat/long
-- ViaCEP (https://viacep.com.br/ws/{cep}/json/) — optional validation/normalization when CEP is available (not mandatory)
+- ViaCEP (https://viacep.com.br/ws/{cep}/json/) — when CEP is available, required to enrich/normalize address fields (city, state) for addresses-sync
+- Nominatim (OpenStreetMap) — geocoding source to convert the normalized address to lat/long
 
 Where to implement
 ------------------
@@ -17,7 +17,7 @@ Enrichment Flow
 ---------------
 1. Input: AddressVO (may include cep, street, number, city, state, lat, long)
 2. If lat/long present -> return input (FA-001)
-3. Normalize: when CEP is present, optionally query ViaCEP to enrich street/city/state; otherwise normalize using provided fields
+3. Normalize: when CEP is present, query ViaCEP to enrich street/city/state (ViaCEP enrichment is required for addresses-sync); otherwise normalize using provided fields
 4. Check cache (key: normalizedAddress or cep+number). If found and not expired -> return cached lat/long
 5. Build geocoding query string: "street number, city, state, Brazil" and call Nominatim with format=json&limit=1
 6. If Nominatim returns result -> persist to cache (with source metadata) and return enriched address
@@ -28,7 +28,8 @@ Reliability & Ops
 - Add configuration properties:
   - enrichment.enabled (boolean)
   - nominatim.endpoint (default public Nominatim URL)
-  - viacep.endpoint (optional; default ViaCEP URL)  # ViaCEP is optional and can be disabled
+  - viacep.enabled (boolean, default true)  # ViaCEP enrichment is enabled by default for addresses-sync
+  - viacep.endpoint (default ViaCEP URL)
   - enrichment.cache.ttl (seconds)
   - enrichment.timeout.ms
   - enrichment.max-retries

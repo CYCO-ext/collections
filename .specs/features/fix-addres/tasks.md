@@ -17,13 +17,17 @@ T2 — Create AddressCache repository
 - Done when: collection created by application and repository CRUD has unit tests
 - Tests: integration test using embedded MongoDB to save/read entries
 
-T3 — Implement Nominatim geocoding client
+T3 — Implement ViaCEP client
 - ID: fix-addres-T3
+- What: HTTP client for ViaCEP with timeout and error handling; returns normalized address fields (street, city, state) for a given CEP
+- Done when: client returns normalized address DTO for a given cep in unit tests
+- Tests: unit tests mocking ViaCEP responses
+
+T4 — Implement Nominatim geocoding client
+- ID: fix-addres-T4
 - What: HTTP client calling Nominatim (with configurable endpoint and User-Agent) and parsing lat/lon
 - Done when: client returns lat/lon for a crafted address in unit tests
 - Tests: unit tests mocking Nominatim responses; test for 429 handling/backoff
-
-# Note: ViaCEP client is optional and not required for the addresses-sync flow. If desired, it can be added later as an optional task.
 
 T5 — Implement enrichment orchestrator
 - ID: fix-addres-T5
@@ -63,6 +67,7 @@ Estimated files touched
 ----------------------
 - src/main/java/org/example/application/port/out/AddressEnrichmentPort.java
 - src/main/java/org/example/infrastructure/address/AddressEnrichmentAdapter.java
+- src/main/java/org/example/infrastructure/address/ViacepClient.java
 - src/main/java/org/example/infrastructure/address/NominatimClient.java
 - src/main/java/org/example/infrastructure/repository/AddressCacheRepository.java
 - src/test/... (unit + integration tests)

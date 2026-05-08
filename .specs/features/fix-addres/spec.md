@@ -19,7 +19,7 @@ Constraints & Assumptions
 Acceptance Criteria
 -------------------
 AC-1: If incoming address already contains lat/long, no enrichment is performed and the coordinates are accepted.
-AC-2: If CEP and number are provided but no lat/long, service attempts geocoding with Nominatim to obtain lat/long; ViaCEP validation is optional and not required for success.
+AC-2: If CEP and number are provided but no lat/long, service must first call ViaCEP to enrich/normalize address (city/state/street) and then geocode the normalized address with Nominatim to obtain lat/long; ViaCEP enrichment is required for addresses-sync.
 AC-3: If enrichment succeeds, the CollectionRequest persisted to MongoDB includes lat/long and enrichment metadata (source, timestamp).
 AC-4: If enrichment fails, the request is flagged with status ADDRESS_UNVERIFIED (or similar) and a meaningful error is returned to the caller; failures are retriable later.
 AC-5: Enriched addresses are cached in a new MongoDB collection to avoid repeated external calls within TTL.
@@ -27,9 +27,10 @@ AC-5: Enriched addresses are cached in a new MongoDB collection to avoid repeate
 Traceability IDs
 -----------------
 - FA-001: Accept coordinates if present
-- FA-002: Geocode with Nominatim and attach lat/long
-- FA-003: Cache enriched addresses
-- FA-004: Mark unresolved addresses and expose retry path
+- FA-002: Enrich and validate address via ViaCEP (when CEP available)
+- FA-003: Geocode with Nominatim and attach lat/long
+- FA-004: Cache enriched addresses
+- FA-005: Mark unresolved addresses and expose retry path
 
 Notes
 -----

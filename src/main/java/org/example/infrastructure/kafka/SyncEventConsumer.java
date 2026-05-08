@@ -36,7 +36,7 @@ public class SyncEventConsumer {
     @Blocking
     public Uni<Void> consumeAddress(KafkaRecord<String, SyncAddressEvent> record) {
         SyncAddressEvent event = record.getPayload();
-        LOG.info("Syncing address: {}", event.id());
+        LOG.info("Syncing address: {}", event.zipCode());
 
         Address address = new Address(
                 event.id(),

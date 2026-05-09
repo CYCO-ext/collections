@@ -16,6 +16,10 @@ import org.example.infrastructure.repository.MaterialRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.UUID;
+
 public class SyncEventConsumer {
 
     private static final Logger LOG = LoggerFactory.getLogger(SyncEventConsumer.class);
@@ -38,30 +42,26 @@ public class SyncEventConsumer {
         SyncAddressEvent event = record.getPayload();
         LOG.info("Syncing address: {}", event.zipCode());
 
-        Address address = new Address(
-                event.id(),
-                event.street(),
-                event.city(),
-                event.zipCode(),
-                event.latitude(),
-                event.longitude()
-        );
-
-        if (address.getLatitude() != null && address.getLongitude() != null) {
-            return addressRepository.upsert(address)
-                    .invoke(() -> LOG.info("Address synced: {}", event.id()))
-                    .onFailure().invoke(ex -> LOG.error("Failed to sync address", ex));
-        }
-
-        return addressEnrichmentPort.enrich(address)
+        return addressEnrichmentPort.enrich(event)
                 .flatMap(enriched -> addressRepository.upsert(enriched)
-                        .invoke(() -> LOG.info("Address enriched & synced: {}", enriched.getId()))
+                        .invoke(() -> LOG.info("Address enriched and synced: {}", enriched.getId()))
                 )
                 .onFailure().recoverWithUni(ex -> {
                     LOG.error("Failed to enrich address: {}", event.id(), ex);
-                    // persist without coords to keep the address available
+                    Address address = new Address(
+                            resolveAddressId(event),
+                            event.street(),
+                            event.city(),
+                            normalizeCep(event.zipCode()),
+                            event.number(),
+                            null,
+                            event.latitude(),
+                            event.longitude(),
+                            "FAILED",
+                            null
+                    );
                     return addressRepository.upsert(address)
-                            .invoke(() -> LOG.info("Address synced without coords: {}", event.id()));
+                            .invoke(() -> LOG.info("Address synced with failure status: {}", address.getId()));
                 });
     }
 
@@ -71,16 +71,22 @@ public class SyncEventConsumer {
         SyncCollectorEvent event = record.getPayload();
         LOG.info("Syncing collector: {}", event.collectorId());
 
-        Address address = new Address(
-                event.address().id(),
-                event.address().street(),
-                event.address().city(),
-                event.address().zipCode(),
-                event.address().latitude(),
-                event.address().longitude()
-        );
+        return addressEnrichmentPort.enrich(event.address())
+                .flatMap(enriched -> addressRepository.upsert(enriched)
+                        .flatMap(ignored -> collectorRepository.upsert(toCollector(event, enriched)))
+                        .invoke(() -> LOG.info("Collector synced with enriched address: {}", event.collectorId()))
+                )
+                .onFailure().recoverWithUni(ex -> {
+                    LOG.error("Failed to enrich collector address: {}", event.collectorId(), ex);
+                    Address address = fallbackAddress(event.address());
+                    return addressRepository.upsert(address)
+                            .flatMap(ignored -> collectorRepository.upsert(toCollector(event, address)))
+                            .invoke(() -> LOG.info("Collector synced with failure status: {}", event.collectorId()));
+                });
+    }
 
-        Collector collector = new Collector(
+    private Collector toCollector(SyncCollectorEvent event, Address address) {
+        return new Collector(
                 event.collectorId(),
                 event.userId(),
                 event.name(),
@@ -88,10 +94,66 @@ public class SyncEventConsumer {
                 event.acceptedMaterialIds(),
                 event.acceptanceRate()
         );
+    }
 
-        return collectorRepository.upsert(collector)
-                .invoke(() -> LOG.info("Collector synced: {}", event.collectorId()))
-                .onFailure().invoke(ex -> LOG.error("Failed to sync collector", ex));
+    private Address fallbackAddress(SyncAddressEvent event) {
+        return new Address(
+                resolveAddressId(event),
+                event.street(),
+                event.city(),
+                normalizeCep(event.zipCode()),
+                event.number(),
+                null,
+                event.latitude(),
+                event.longitude(),
+                "FAILED",
+                null
+        );
+    }
+
+    private String resolveAddressId(SyncAddressEvent event) {
+        if (event.id() != null && !event.id().isBlank()) {
+            return event.id();
+        }
+        String cep = normalizeCep(event.zipCode());
+        if (cep == null) {
+            return UUID.randomUUID().toString();
+        }
+        return hashId(String.join("|",
+                cep,
+                normalizeKey(event.street()),
+                normalizeKey(event.number()),
+                normalizeKey(event.city())
+        ));
+    }
+
+    private String normalizeCep(String cep) {
+        if (cep == null) {
+            return null;
+        }
+        String digits = cep.replaceAll("\\D", "");
+        return digits.isEmpty() ? null : digits;
+    }
+
+    private String normalizeKey(String value) {
+        return value == null ? "" : value.trim().toLowerCase();
+    }
+
+    private String hashId(String input) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                String value = Integer.toHexString(0xff & b);
+                if (value.length() == 1) {
+                    hex.append('0');
+                }
+                hex.append(value);
+            }
+            return hex.toString();
+        } catch (Exception e) {
+            return UUID.randomUUID().toString();
+        }
     }
 }
-

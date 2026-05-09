@@ -1,33 +1,32 @@
 package org.example.infrastructure.repository;
 
+import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.ReplaceOptions;
 import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.bson.Document;
+import org.bson.conversions.Bson;
 import org.example.domain.entity.Address;
-import com.mongodb.client.model.Filters;
-
-import java.util.List;
 
 @Singleton
 public class AddressRepository {
 
-    @Inject
-    ReactiveMongoClient mongoClient;
-
     private static final String DB_NAME = "collections";
     private static final String COLLECTION_NAME = "addresses";
+
+    @Inject
+    ReactiveMongoClient mongoClient;
 
     private ReactiveMongoCollection<Document> getCollection() {
         return mongoClient.getDatabase(DB_NAME).getCollection(COLLECTION_NAME, Document.class);
     }
 
     public Uni<Void> save(Address address) {
-        Document doc = toDocument(address);
         return getCollection()
-                .insertOne(doc)
+                .insertOne(toDocument(address))
                 .replaceWithVoid();
     }
 
@@ -39,22 +38,44 @@ public class AddressRepository {
                 .transform(this::fromDocument);
     }
 
-    public Uni<Void> upsert(Address address) {
-        Document doc = toDocument(address);
+    public Uni<Address> findDuplicate(Address address) {
+        Bson filter = Filters.and(
+                Filters.eq("zipCode", normalize(address.getZipCode())),
+                Filters.eq("street", normalize(address.getStreet())),
+                Filters.eq("number", normalize(address.getNumber())),
+                Filters.eq("city", normalize(address.getCity())),
+                Filters.eq("state", normalize(address.getState()))
+        );
+
         return getCollection()
-                .replaceOne(Filters.eq("_id", address.getId()), doc,
-                    new com.mongodb.client.model.ReplaceOptions().upsert(true))
+                .find(filter)
+                .collect().first()
+                .onItem().ifNotNull()
+                .transform(this::fromDocument);
+    }
+
+    public Uni<Void> upsert(Address address) {
+        return getCollection()
+                .replaceOne(
+                        Filters.eq("_id", address.getId()),
+                        toDocument(address),
+                        new ReplaceOptions().upsert(true)
+                )
                 .replaceWithVoid();
     }
 
     private Document toDocument(Address address) {
         return new Document()
                 .append("_id", address.getId())
-                .append("street", address.getStreet())
-                .append("city", address.getCity())
-                .append("zipCode", address.getZipCode())
+                .append("street", normalize(address.getStreet()))
+                .append("city", normalize(address.getCity()))
+                .append("zipCode", normalize(address.getZipCode()))
+                .append("number", normalize(address.getNumber()))
+                .append("state", normalize(address.getState()))
                 .append("latitude", address.getLatitude())
-                .append("longitude", address.getLongitude());
+                .append("longitude", address.getLongitude())
+                .append("enrichmentStatus", address.getEnrichmentStatus())
+                .append("enrichmentSource", address.getEnrichmentSource());
     }
 
     private Address fromDocument(Document doc) {
@@ -63,9 +84,20 @@ public class AddressRepository {
                 doc.getString("street"),
                 doc.getString("city"),
                 doc.getString("zipCode"),
+                doc.getString("number"),
+                doc.getString("state"),
                 doc.getDouble("latitude"),
-                doc.getDouble("longitude")
+                doc.getDouble("longitude"),
+                doc.getString("enrichmentStatus"),
+                doc.getString("enrichmentSource")
         );
     }
-}
 
+    private String normalize(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+}

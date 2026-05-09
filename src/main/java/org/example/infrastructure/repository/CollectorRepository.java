@@ -63,8 +63,8 @@ public class CollectorRepository {
     public Uni<Void> upsert(Collector collector) {
         Document doc = toDocument(collector);
         return getCollection()
-                .replaceOne(Filters.eq("_id", collector.getId()), doc, 
-                    new com.mongodb.client.model.ReplaceOptions().upsert(true))
+                .replaceOne(Filters.eq("_id", collector.getId()), doc,
+                        new com.mongodb.client.model.ReplaceOptions().upsert(true))
                 .replaceWithVoid();
     }
 
@@ -84,8 +84,12 @@ public class CollectorRepository {
                 .append("street", address.getStreet())
                 .append("city", address.getCity())
                 .append("zipCode", address.getZipCode())
+                .append("number", address.getNumber())
+                .append("state", address.getState())
                 .append("latitude", address.getLatitude())
-                .append("longitude", address.getLongitude());
+                .append("longitude", address.getLongitude())
+                .append("enrichmentStatus", address.getEnrichmentStatus())
+                .append("enrichmentSource", address.getEnrichmentSource());
     }
 
     private Collector fromDocument(Document doc) {
@@ -95,8 +99,12 @@ public class CollectorRepository {
                 addrDoc.getString("street"),
                 addrDoc.getString("city"),
                 addrDoc.getString("zipCode"),
+                addrDoc.getString("number"),
+                addrDoc.getString("state"),
                 addrDoc.getDouble("latitude"),
-                addrDoc.getDouble("longitude")
+                addrDoc.getDouble("longitude"),
+                addrDoc.getString("enrichmentStatus"),
+                addrDoc.getString("enrichmentSource")
         );
 
         Collector collector = new Collector();

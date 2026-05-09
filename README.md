@@ -200,8 +200,8 @@ PENDING
 
 ### Consumer Topics (Sync from User Service)
 - `sync-materials` - Material data synchronization
-- `sync-addresses` - Address data synchronization
-- `sync-collectors` - Collector data synchronization
+- `addresses-sync` - Address data synchronization
+- `collector-sync` - Collector data synchronization
 
 ### Producer Topics (Collection Events)
 - `collection-events` - Published events:
@@ -215,7 +215,139 @@ PENDING
 - `collection_requests` - Collection request documents
 - `collectors` - Collector data synced from user service
 - `materials` - Material data synced from user service
-- `addresses` - Address data synced from user service
+- `addresses` - Address data synced from user service with enrichment metadata
+- `address_cache` - Cache for geocoded addresses with TTL expiration
+
+## Address Enrichment Flow
+
+The service automatically enriches address data via multiple external services:
+
+### Enrichment Process
+
+```
+SyncAddressEvent / SyncCollectorEvent.address → AddressEnrichmentAdapter
+  │
+  ├─ Step 1: Check if coordinates already provided
+  │   └─ YES → Return address as PROVIDED
+  │
+  ├─ Step 2: Generate ID
+  │   └─ ID = SHA-256(cep+street+number+city) if CEP present, else UUID
+  │
+  ├─ Step 3: Check for duplicate addresses
+  │   └─ Query by (zipCode, street, number, city, state)
+  │   └─ If found → Reuse ID, skip enrichment
+  │
+  ├─ Step 4: ViaCEP enrichment (if enabled)
+  │   ├─ Lookup postal code → Extract city, state, street
+  │   └─ Enrich missing fields
+  │
+  ├─ Step 5: Check address cache
+  │   └─ Query cache by (cep+number+street+city)
+  │   └─ If found → Use cached coordinates
+  │
+  ├─ Step 6: Nominatim geocoding
+  │   ├─ Build query from enriched address
+  │   └─ Lookup coordinates (latitude, longitude)
+  │
+  ├─ Step 7: Cache result
+  │   ├─ Store in address_cache collection
+  │   ├─ Add source metadata (viacep/nominatim/cache)
+  │   └─ Set TTL for automatic expiration
+  │
+  └─ Step 8: Set enrichment status
+      ├─ ENRICHED → Coordinates found
+      ├─ ADDRESS_UNVERIFIED → No coordinates found
+      ├─ PROVIDED → Coordinates in input
+      └─ FAILED → Enrichment error
+```
+
+### Address Entity Fields
+
+```java
+public class Address {
+    // Existing fields
+    private String id;              // Generated or provided address ID
+    private String street;          // Street name
+    private String city;            // City name
+    private String zipCode;         // Postal code (CEP in Brazil)
+    private Double latitude;        // Geocoded latitude
+    private Double longitude;       // Geocoded longitude
+    
+    // New enrichment fields
+    private String number;          // Street number (enriched)
+    private String state;           // State/province (from ViaCEP)
+    private String enrichmentStatus; // PENDING, ENRICHED, ADDRESS_UNVERIFIED, PROVIDED, FAILED, SKIPPED
+    private String enrichmentSource; // viacep, nominatim, cache, provided
+}
+```
+
+### Configuration
+
+```properties
+# Enable/disable enrichment processing
+enrichment.enabled=true
+
+# ViaCEP configuration (Brazilian postal code service)
+viacep.enabled=true
+viacep.endpoint=https://viacep.com.br/ws
+
+# Nominatim configuration (OpenStreetMap geocoding)
+nominatim.endpoint=https://nominatim.openstreetmap.org
+
+# Cache and timeout settings
+enrichment.cache.ttl=86400                    # 24 hours
+enrichment.timeout.ms=5000                   # 5 seconds
+enrichment.user-agent=collections-service/1.0
+```
+
+### Service Integrations
+
+1. **ViaCEP** (https://viacep.com.br/)
+   - Enriches CEP with street, city, state
+   - Brazilian postal code service
+   - No rate limiting for integration use
+
+2. **Nominatim** (https://nominatim.openstreetmap.org/)
+   - Geocodes addresses to coordinates
+   - OpenStreetMap reverse geocoding
+   - Respects rate limits (1 request/sec, user-agent required)
+
+### MongoDB Indexes
+
+Run `db-migration.js` to create required indexes:
+
+```javascript
+// Unique compound index for duplicate detection
+db.addresses.createIndex({
+    zipCode: 1, street: 1, number: 1, city: 1, state: 1
+}, { unique: true, sparse: true });
+
+// TTL index for cache expiration
+db.address_cache.createIndex(
+    { createdAt: 1 },
+    { expireAfterSeconds: 86400 }
+);
+```
+
+### Kafka Topics & Events
+
+#### Consumer Topics (Sync from User Service)
+- `addresses-sync` - **Enriched** with coordinates and enrichment metadata
+- `collector-sync` - **Enriched** through the same address flow; collector records store the returned address ID/reference
+
+#### Error Handling
+- Enrichment failures are logged but address is persisted
+- Fallback to Nominatim if ViaCEP fails
+- Graceful degradation: returns address without coordinates if all enrichment fails
+- Circuit breaker for external service timeouts
+
+## MongoDB Collections
+
+- `collection_requests` - Collection request documents
+- `collectors` - Collector data synced from user service
+- `materials` - Material data synced from user service
+- `addresses` - Address data synced from user service with enrichment metadata
+- `address_cache` - Cache for geocoded addresses with TTL expiration
 
 ## Getting Started
 
@@ -267,11 +399,10 @@ See `application.properties` for:
 
 All operations use **Mutiny Uni/Multi** for non-blocking, reactive streams:
 
-```java
+```
 // Example: Create request reactively
-Uni<CollectionRequest> request = 
-  collectionRequestUseCase.createRequest(...)
-    .subscribe().withSubscriber(...)
+Uni<CollectionRequest> request = collectionRequestUseCase.createRequest(/* params */);
+request.subscribe().withSubscriber(/* subscriber */);
 ```
 
 ## Key Features

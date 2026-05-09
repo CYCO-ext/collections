@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.example.domain.entity.Address;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,58 +19,77 @@ import java.util.Optional;
 
 @Singleton
 public class ViacepClient {
+
     private static final Logger LOG = LoggerFactory.getLogger(ViacepClient.class);
 
     @Inject
     ObjectMapper mapper;
 
+    @ConfigProperty(name = "viacep.endpoint", defaultValue = "https://viacep.com.br/ws")
+    String endpoint;
+
+    @ConfigProperty(name = "enrichment.timeout.ms", defaultValue = "5000")
+    long timeoutMs;
+
+    @ConfigProperty(name = "enrichment.user-agent", defaultValue = "collections-service/1.0")
+    String userAgent;
+
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
-    // keep same user agent as other clients
-    private static final String USER_AGENT = "collections-service/1.0 (contact@example.com)";
-
     public Uni<Optional<Address>> geocodeCep(String cep) {
         return Uni.createFrom().item(() -> {
             try {
-                if (cep == null) return Optional.empty();
-                String digits = cep.replaceAll("\\D", "");
-                if (digits.length() != 8) return Optional.empty();
-
-                String url = "https://viacep.com.br/ws/" + digits + "/json/";
-                HttpRequest req = HttpRequest.newBuilder()
-                        .uri(URI.create(url))
-                        .timeout(Duration.ofSeconds(10))
-                        .header("User-Agent", USER_AGENT)
-                        .GET()
-                        .build();
-
-                HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-                if (resp.statusCode() != 200) {
-                    LOG.warn("ViaCEP returned status {} for cep {}", resp.statusCode(), cep);
+                String digits = normalizeCep(cep);
+                if (digits == null) {
                     return Optional.empty();
                 }
 
-                JsonNode node = mapper.readTree(resp.body());
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(endpoint.replaceAll("/+$", "") + "/" + digits + "/json/"))
+                        .timeout(Duration.ofMillis(timeoutMs))
+                        .header("User-Agent", userAgent)
+                        .GET()
+                        .build();
+
+                HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() != 200) {
+                    LOG.warn("ViaCEP returned status {} for cep {}", response.statusCode(), cep);
+                    return Optional.empty();
+                }
+
+                JsonNode node = mapper.readTree(response.body());
                 if (node.has("erro") && node.get("erro").asBoolean(false)) {
                     return Optional.empty();
                 }
 
-                String logradouro = node.has("logradouro") && !node.get("logradouro").isNull() ? node.get("logradouro").asText() : null;
-                String localidade = node.has("localidade") && !node.get("localidade").isNull() ? node.get("localidade").asText() : null;
-                String cepResp = node.has("cep") && !node.get("cep").isNull() ? node.get("cep").asText() : digits;
-
-                Address a = new Address();
-                a.setStreet(logradouro);
-                a.setCity(localidade);
-                a.setZipCode(cepResp != null ? cepResp.replaceAll("\\D", "") : digits);
-
-                return Optional.of(a);
+                Address address = new Address();
+                address.setStreet(readText(node, "logradouro"));
+                address.setCity(readText(node, "localidade"));
+                address.setState(readText(node, "uf"));
+                address.setZipCode(normalizeCep(readText(node, "cep")) != null ? normalizeCep(readText(node, "cep")) : digits);
+                return Optional.of(address);
             } catch (Exception e) {
                 LOG.error("Error calling ViaCEP", e);
                 return Optional.empty();
             }
         });
+    }
+
+    private String readText(JsonNode node, String field) {
+        if (!node.has(field) || node.get(field).isNull()) {
+            return null;
+        }
+        String value = node.get(field).asText().trim();
+        return value.isEmpty() ? null : value;
+    }
+
+    private String normalizeCep(String cep) {
+        if (cep == null) {
+            return null;
+        }
+        String digits = cep.replaceAll("\\D", "");
+        return digits.length() == 8 ? digits : null;
     }
 }

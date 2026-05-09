@@ -7,10 +7,19 @@ import java.util.List;
 
 public interface CollectionRequestPort {
     Uni<Void> save(CollectionRequest request);
+
     Uni<Void> update(CollectionRequest request);
+
     Uni<CollectionRequest> findById(String id);
+
     Uni<List<CollectionRequest>> findByGeneratorId(String generatorId);
+
     Uni<List<CollectionRequest>> findByStatus(String status);
+
+    Uni<List<CollectionRequest>> findByIds(List<String> ids);
+
+    Uni<List<CollectionRequest>> findInProgress(int limit);
+
     Uni<List<CollectionRequest>> findBySelectedCollectorId(String collectorId);
 }
 

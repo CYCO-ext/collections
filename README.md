@@ -168,6 +168,51 @@ POST /api/collectors/requests/{requestId}/reject
 Response: 200 OK
 ```
 
+**Suggest Optimized Routes**
+```
+POST /api/collectors/routes/suggest
+Content-Type: application/json
+
+{
+  "collectorId": "coll-001",
+  "vehicleCount": 2,
+  "vehicleCapacity": 100.0,
+  "start": {
+    "type": "COORDINATES",
+    "latitude": -23.5505,
+    "longitude": -46.6333
+  },
+  "candidateRequestIds": ["req-001", "req-002"],
+  "options": {
+    "timeLimitSeconds": 5,
+    "allowDroppingStops": true
+  }
+}
+
+Response: 200 OK
+{
+  "status": "FEASIBLE",
+  "solver": {
+    "engine": "OR_TOOLS",
+    "elapsedMs": 42,
+    "objectiveDistanceMeters": 18450,
+    "droppedStops": 0
+  },
+  "routes": [
+    {
+      "vehicleIndex": 0,
+      "capacity": 100.0,
+      "totalLoad": 75.0,
+      "totalDistanceMeters": 9400,
+      "stops": []
+    }
+  ],
+  "unassigned": []
+}
+```
+
+Route suggestions are read-only. They do not select collectors, accept requests, or change collection request status. Only `IN_PROGRESS` collection requests are eligible for routing; other statuses are returned as unassigned. The MVP uses OR-Tools with a Haversine distance matrix; a road-network distance provider can be added behind the distance matrix port later.
+
 ### Completion Endpoints
 
 **Confirm by Generator**

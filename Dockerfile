@@ -6,7 +6,7 @@ COPY src/ src/
 RUN mvn clean package -DskipTests -Dquarkus.package.type=uber-jar
 
 # Runtime stage
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:21-jdk
 WORKDIR /app
 COPY --from=builder /workspace/target/*-runner.jar application.jar
 

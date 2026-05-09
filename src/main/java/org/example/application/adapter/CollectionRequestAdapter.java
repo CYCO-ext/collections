@@ -41,6 +41,16 @@ public class CollectionRequestAdapter implements CollectionRequestPort {
     }
 
     @Override
+    public Uni<List<CollectionRequest>> findByIds(List<String> ids) {
+        return repository.findByIds(ids);
+    }
+
+    @Override
+    public Uni<List<CollectionRequest>> findInProgress(int limit) {
+        return repository.findInProgress(limit);
+    }
+
+    @Override
     public Uni<List<CollectionRequest>> findBySelectedCollectorId(String collectorId) {
         return repository.findBySelectedCollectorId(collectorId);
     }

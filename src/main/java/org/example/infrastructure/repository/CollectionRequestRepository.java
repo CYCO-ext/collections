@@ -1,5 +1,6 @@
 package org.example.infrastructure.repository;
 
+import com.mongodb.client.model.Filters;
 import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
@@ -7,7 +8,6 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.bson.Document;
 import org.example.domain.entity.CollectionRequest;
-import com.mongodb.client.model.Filters;
 
 import java.util.List;
 
@@ -58,6 +58,26 @@ public class CollectionRequestRepository {
                 .find(Filters.eq("status", status))
                 .collect().asList()
                 .onItem().transform(docs -> docs.stream().map(this::fromDocument).toList());
+    }
+
+    public Uni<List<CollectionRequest>> findByIds(List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Uni.createFrom().item(List.of());
+        }
+        return getCollection()
+                .find(Filters.in("_id", ids))
+                .collect().asList()
+                .onItem().transform(docs -> docs.stream().map(this::fromDocument).toList());
+    }
+
+    public Uni<List<CollectionRequest>> findInProgress(int limit) {
+        return getCollection()
+                .find(Filters.eq("status", CollectionRequest.Status.IN_PROGRESS.toString()))
+                .collect().asList()
+                .onItem().transform(docs -> docs.stream()
+                        .limit(Math.max(limit, 0))
+                        .map(this::fromDocument)
+                        .toList());
     }
 
     public Uni<List<CollectionRequest>> findBySelectedCollectorId(String collectorId) {

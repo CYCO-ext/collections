@@ -1,14 +1,19 @@
 package org.example.infrastructure.repository;
 
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Sorts;
+import io.quarkus.mongodb.FindOptions;
 import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.bson.Document;
+import org.bson.conversions.Bson;
+import org.example.application.usecase.SearchCollectionsUseCase.CollectionSearchQuery;
 import org.example.domain.entity.CollectionRequest;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Singleton
@@ -58,6 +63,35 @@ public class CollectionRequestRepository {
                 .find(Filters.eq("status", status))
                 .collect().asList()
                 .onItem().transform(docs -> docs.stream().map(this::fromDocument).toList());
+    }
+
+    public Uni<List<CollectionRequest>> search(CollectionSearchQuery query) {
+        FindOptions options = new FindOptions().sort(Sorts.descending("createdAt"));
+        Bson filter = toSearchFilter(query);
+        return getCollection()
+                .find(filter, options)
+                .collect().asList()
+                .onItem().transform(docs -> docs.stream().map(this::fromDocument).toList());
+    }
+
+    private Bson toSearchFilter(CollectionSearchQuery query) {
+        if (query == null) {
+            return new Document();
+        }
+        List<Bson> filters = new ArrayList<>();
+        if (query.status() != null) {
+            filters.add(Filters.eq("status", query.status().toString()));
+        }
+        if (query.collectorId() != null) {
+            filters.add(Filters.eq("selectedCollectorId", query.collectorId()));
+        }
+        if (query.generatorId() != null) {
+            filters.add(Filters.eq("generatorId", query.generatorId()));
+        }
+        if (filters.isEmpty()) {
+            return new Document();
+        }
+        return Filters.and(filters);
     }
 
     public Uni<List<CollectionRequest>> findByIds(List<String> ids) {

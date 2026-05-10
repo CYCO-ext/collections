@@ -4,6 +4,7 @@ import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.example.application.port.out.CollectionRequestPort;
+import org.example.application.usecase.SearchCollectionsUseCase.CollectionSearchQuery;
 import org.example.domain.entity.CollectionRequest;
 import org.example.infrastructure.repository.CollectionRequestRepository;
 
@@ -41,6 +42,11 @@ public class CollectionRequestAdapter implements CollectionRequestPort {
     }
 
     @Override
+    public Uni<List<CollectionRequest>> search(CollectionSearchQuery query) {
+        return repository.search(query);
+    }
+
+    @Override
     public Uni<List<CollectionRequest>> findByIds(List<String> ids) {
         return repository.findByIds(ids);
     }
@@ -55,4 +61,3 @@ public class CollectionRequestAdapter implements CollectionRequestPort {
         return repository.findBySelectedCollectorId(collectorId);
     }
 }
-

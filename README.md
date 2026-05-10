@@ -213,6 +213,58 @@ Response: 200 OK
 
 Route suggestions are read-only. They do not select collectors, accept requests, or change collection request status. Only `IN_PROGRESS` collection requests are eligible for routing; other statuses are returned as unassigned. The MVP uses OR-Tools with a Haversine distance matrix; a road-network distance provider can be added behind the distance matrix port later.
 
+### Collection Search
+
+**Search Collection Requests**
+```
+GET /api/collections/search
+GET /api/collections/search?status=IN_PROGRESS
+GET /api/collections/search?collectorId=coll-001
+GET /api/collections/search?generatorId=gen-001
+GET /api/collections/search?status=IN_PROGRESS&collectorId=coll-001&generatorId=gen-001
+
+Response: 200 OK
+[
+  {
+    "id": "req-001",
+    "generatorId": "gen-001",
+    "addressId": "addr-001",
+    "materialIds": ["mat-001", "mat-002"],
+    "weight": 100.0,
+    "status": "IN_PROGRESS",
+    "selectedCollectorId": "coll-001",
+    "generatorConfirmed": false,
+    "collectorConfirmed": false,
+    "createdAt": "2026-05-09T16:00:00",
+    "updatedAt": "2026-05-09T16:10:00"
+  }
+]
+```
+
+The `status`, `collectorId`, and `generatorId` query parameters are optional. Supported status values are `PENDING`, `IN_PROGRESS`, `COMPLETED`, and `REJECTED`. When multiple filters are provided, all must match. Results are always ordered by `createdAt` descending, so the newest collection requests appear first. Invalid status values return HTTP 400.
+
+**Get Collection Request by ID**
+```
+GET /api/collections/{id}
+
+Response: 200 OK
+{
+  "id": "req-001",
+  "generatorId": "gen-001",
+  "addressId": "addr-001",
+  "materialIds": ["mat-001", "mat-002"],
+  "weight": 100.0,
+  "status": "IN_PROGRESS",
+  "selectedCollectorId": "coll-001",
+  "generatorConfirmed": false,
+  "collectorConfirmed": false,
+  "createdAt": "2026-05-09T16:00:00",
+  "updatedAt": "2026-05-09T16:10:00"
+}
+```
+
+Blank ids return HTTP 400. Existing but unknown ids return HTTP 404 with `Collection request not found: {id}`.
+
 ### Completion Endpoints
 
 **Confirm by Generator**
@@ -372,6 +424,29 @@ db.address_cache.createIndex(
     { createdAt: 1 },
     { expireAfterSeconds: 86400 }
 );
+
+// Collection search newest-first ordering
+db.collection_requests.createIndex({
+    createdAt: -1
+});
+
+// Collection search status filter plus newest-first ordering
+db.collection_requests.createIndex({
+    status: 1,
+    createdAt: -1
+});
+
+// Collection search collector filter plus newest-first ordering
+db.collection_requests.createIndex({
+    selectedCollectorId: 1,
+    createdAt: -1
+});
+
+// Collection search generator filter plus newest-first ordering
+db.collection_requests.createIndex({
+    generatorId: 1,
+    createdAt: -1
+});
 ```
 
 ### Kafka Topics & Events

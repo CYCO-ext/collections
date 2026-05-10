@@ -14,6 +14,8 @@ Milestones
 
 Next actions
 ------------
+- Implement collection-id endpoint for fetching a collection request by id
+- Implement search-collections endpoint for status filtering and newest-first ordering
 - Implement JWT auth and secure endpoints
 - Add CI pipeline and Heroku deployment config
 - Create DB indices for collection_requests

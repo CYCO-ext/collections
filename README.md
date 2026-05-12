@@ -168,6 +168,28 @@ POST /api/collectors/requests/{requestId}/reject
 Response: 200 OK
 ```
 
+**Get Collector Address**
+```
+GET /api/collectors/{collectorId}/address
+
+Response: 200 OK
+{
+  "collectorId": "coll-001",
+  "addressId": "addr-001",
+  "street": "Main St",
+  "number": "100",
+  "city": "Sao Paulo",
+  "state": "SP",
+  "zipCode": "01000-000",
+  "latitude": -23.5505,
+  "longitude": -46.6333,
+  "enrichmentStatus": "ENRICHED",
+  "enrichmentSource": "nominatim"
+}
+```
+
+Blank collector ids return HTTP 400. Missing collectors or collectors without address data return HTTP 404.
+
 **Suggest Optimized Routes**
 ```
 POST /api/collectors/routes/suggest
@@ -212,6 +234,61 @@ Response: 200 OK
 ```
 
 Route suggestions are read-only. They do not select collectors, accept requests, or change collection request status. Only `IN_PROGRESS` collection requests are eligible for routing; other statuses are returned as unassigned. The MVP uses OR-Tools with a Haversine distance matrix; a road-network distance provider can be added behind the distance matrix port later.
+
+**Save Route Suggestion**
+```
+POST /api/collectors/routes/save
+Content-Type: application/json
+
+{
+  "collectorId": "coll-001",
+  "source": "ROUTE_SUGGESTION",
+  "suggestion": {
+    "status": "FEASIBLE",
+    "solver": {
+      "engine": "OR_TOOLS",
+      "elapsedMs": 42,
+      "objectiveDistanceMeters": 18450,
+      "droppedStops": 0
+    },
+    "routes": []
+  }
+}
+
+Response: 201 Created
+{
+  "id": "saved-route-001",
+  "collectorId": "coll-001",
+  "status": "OPEN",
+  "fingerprint": "sha256...",
+  "assignedCollectionRequestIds": ["req-001"],
+  "createdAt": "2026-05-12T10:00:00",
+  "updatedAt": "2026-05-12T10:00:00",
+  "closedAt": null,
+  "suggestion": {}
+}
+```
+
+Duplicate route suggestions for the same collector and same ordered stops return HTTP 409. Saved routes are `OPEN` until every assigned collection request is `COMPLETED`; routes saved after all assigned requests are already complete are immediately `CLOSED`.
+
+**List Saved Routes**
+```
+GET /api/collectors/routes/saved
+
+Response: 200 OK
+[
+  {
+    "id": "saved-route-001",
+    "collectorId": "coll-001",
+    "status": "OPEN",
+    "assignedCollectionRequestIds": ["req-001"],
+    "createdAt": "2026-05-12T10:00:00",
+    "updatedAt": "2026-05-12T10:00:00",
+    "closedAt": null,
+    "suggestion": {}
+  }
+]
+```
 
 ### Collection Search
 
@@ -445,6 +522,28 @@ db.collection_requests.createIndex({
 // Collection search generator filter plus newest-first ordering
 db.collection_requests.createIndex({
     generatorId: 1,
+    createdAt: -1
+});
+
+// Saved route duplicate blocking
+db.saved_routes.createIndex({
+    fingerprint: 1
+}, { unique: true });
+
+// Saved routes newest-first listing
+db.saved_routes.createIndex({
+    createdAt: -1
+});
+
+// Saved route closure lookup by assigned request
+db.saved_routes.createIndex({
+    status: 1,
+    assignedCollectionRequestIds: 1
+});
+
+// Saved routes by collector newest-first
+db.saved_routes.createIndex({
+    collectorId: 1,
     createdAt: -1
 });
 ```

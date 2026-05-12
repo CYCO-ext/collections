@@ -10,9 +10,12 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class CompletionUseCaseTest {
@@ -26,45 +29,34 @@ class CompletionUseCaseTest {
     @Mock
     private EventPort eventPort;
 
+    @Mock
+    private CloseSavedRoutesUseCase closeSavedRoutesUseCase;
+
     @Test
     void testConfirmGeneratorCompletion() {
-        // Given
         String requestId = "req-001";
-        CollectionRequest request = new CollectionRequest("gen-001", "addr-001",
-                java.util.Arrays.asList("mat-001"), 100.0);
-        request.setId(requestId);
-        request.setStatus(CollectionRequest.Status.IN_PROGRESS);
-        request.setSelectedCollectorId("coll-001");
+        CollectionRequest request = request(requestId);
 
         when(collectionRequestPort.findById(requestId))
                 .thenReturn(Uni.createFrom().item(request));
         when(collectionRequestPort.update(any(CollectionRequest.class)))
                 .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
-        // Note: eventPort.publishCollectionEvent() is not called when only generator confirms
 
-        // When
         Uni<Void> result = useCase.confirmGeneratorCompletion(requestId);
 
-        // Then
         assertNotNull(result);
-        result.subscribe().with(it -> {
-            // Completion successful
-        });
+        result.await().indefinitely();
 
         verify(collectionRequestPort).findById(requestId);
         verify(collectionRequestPort).update(any(CollectionRequest.class));
-        verify(eventPort, never()).publishCollectionEvent(any()); // Ensure it's not called
+        verify(eventPort, never()).publishCollectionEvent(any());
+        verify(closeSavedRoutesUseCase, never()).closeRoutesContaining(any());
     }
 
     @Test
     void testConfirmCollectorCompletion() {
-        // Given
         String requestId = "req-001";
-        CollectionRequest request = new CollectionRequest("gen-001", "addr-001",
-                java.util.Arrays.asList("mat-001"), 100.0);
-        request.setId(requestId);
-        request.setStatus(CollectionRequest.Status.IN_PROGRESS);
-        request.setSelectedCollectorId("coll-001");
+        CollectionRequest request = request(requestId);
         request.setGeneratorConfirmed(true);
 
         when(collectionRequestPort.findById(requestId))
@@ -73,30 +65,24 @@ class CompletionUseCaseTest {
                 .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
         when(eventPort.publishCollectionEvent(any()))
                 .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
+        when(closeSavedRoutesUseCase.closeRoutesContaining(requestId))
+                .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
 
-        // When
         Uni<Void> result = useCase.confirmCollectorCompletion(requestId);
 
-        // Then
         assertNotNull(result);
-        result.subscribe().with(it -> {
-            // Completion successful
-        });
+        result.await().indefinitely();
 
         verify(collectionRequestPort).findById(requestId);
-        verify(collectionRequestPort, times(2)).update(any(CollectionRequest.class)); // Called twice: set collectorConfirmed + mark completed
+        verify(collectionRequestPort, times(2)).update(any(CollectionRequest.class));
         verify(eventPort).publishCollectionEvent(any());
+        verify(closeSavedRoutesUseCase).closeRoutesContaining(requestId);
     }
 
     @Test
     void testMarksCompletedWhenBothConfirm() {
-        // Given
         String requestId = "req-001";
-        CollectionRequest request = new CollectionRequest("gen-001", "addr-001",
-                java.util.Arrays.asList("mat-001"), 100.0);
-        request.setId(requestId);
-        request.setStatus(CollectionRequest.Status.IN_PROGRESS);
-        request.setSelectedCollectorId("coll-001");
+        CollectionRequest request = request(requestId);
         request.setGeneratorConfirmed(true);
 
         when(collectionRequestPort.findById(requestId))
@@ -105,17 +91,25 @@ class CompletionUseCaseTest {
                 .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
         when(eventPort.publishCollectionEvent(any()))
                 .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
+        when(closeSavedRoutesUseCase.closeRoutesContaining(requestId))
+                .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
 
-        // When
         Uni<Void> result = useCase.confirmCollectorCompletion(requestId);
 
-        // Then
         assertNotNull(result);
-        result.subscribe().with(it -> {
-            // Completion successful
-        });
+        result.await().indefinitely();
 
         verify(collectionRequestPort).findById(requestId);
         verify(eventPort).publishCollectionEvent(any());
+        verify(closeSavedRoutesUseCase).closeRoutesContaining(requestId);
+    }
+
+    private CollectionRequest request(String requestId) {
+        CollectionRequest request = new CollectionRequest("gen-001", "addr-001",
+                java.util.Arrays.asList("mat-001"), 100.0);
+        request.setId(requestId);
+        request.setStatus(CollectionRequest.Status.IN_PROGRESS);
+        request.setSelectedCollectorId("coll-001");
+        return request;
     }
 }

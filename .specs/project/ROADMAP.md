@@ -14,6 +14,8 @@ Milestones
 
 Next actions
 ------------
+- Implement save-route endpoint, persistence, duplicate blocking, listing, and closure
+- Implement collector-address endpoint for retrieving collector address info
 - Implement collection-id endpoint for fetching a collection request by id
 - Implement search-collections endpoint for status filtering and newest-first ordering
 - Implement JWT auth and secure endpoints

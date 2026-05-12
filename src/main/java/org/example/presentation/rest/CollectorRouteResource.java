@@ -3,13 +3,18 @@ package org.example.presentation.rest;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.example.application.route.RouteModels.*;
+import org.example.application.route.SavedRouteModels.SaveRouteSuggestionCommand;
+import org.example.application.usecase.DuplicateSavedRouteException;
+import org.example.application.usecase.ListSavedRoutesUseCase;
 import org.example.application.usecase.RouteOptimizationUseCase;
+import org.example.application.usecase.SaveRouteSuggestionUseCase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,6 +28,12 @@ public class CollectorRouteResource {
 
     @Inject
     RouteOptimizationUseCase routeOptimizationUseCase;
+
+    @Inject
+    SaveRouteSuggestionUseCase saveRouteSuggestionUseCase;
+
+    @Inject
+    ListSavedRoutesUseCase listSavedRoutesUseCase;
 
     @POST
     @Path("/suggest")
@@ -40,6 +51,47 @@ public class CollectorRouteResource {
                     LOG.error("Error suggesting routes", ex);
                     return Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build();
                 });
+    }
+
+    @POST
+    @Path("/save")
+    public Uni<Response> saveRoute(SaveRouteRequestDTO dto) {
+        LOG.info("POST /collectors/routes/save");
+        SaveRouteSuggestionCommand command;
+        try {
+            command = toSaveCommand(dto);
+        } catch (RuntimeException ex) {
+            return Uni.createFrom().item(Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build());
+        }
+        return saveRouteSuggestionUseCase.save(command)
+                .onItem().transform(result -> Response.status(Response.Status.CREATED).entity(result).build())
+                .onFailure(DuplicateSavedRouteException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.CONFLICT).entity(ex.getMessage()).build())
+                .onFailure(IllegalArgumentException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build())
+                .onFailure().recoverWithItem(ex -> {
+                    LOG.error("Error saving route", ex);
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
+                });
+    }
+
+    @GET
+    @Path("/saved")
+    public Uni<Response> listSavedRoutes() {
+        LOG.info("GET /collectors/routes/saved");
+        return listSavedRoutesUseCase.list()
+                .onItem().transform(results -> Response.ok(results).build())
+                .onFailure().recoverWithItem(ex -> {
+                    LOG.error("Error listing saved routes", ex);
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
+                });
+    }
+
+    private SaveRouteSuggestionCommand toSaveCommand(SaveRouteRequestDTO dto) {
+        if (dto == null) {
+            throw new IllegalArgumentException("save route request is required");
+        }
+        return new SaveRouteSuggestionCommand(dto.getCollectorId(), dto.getSource(), dto.getSuggestion());
     }
 
     private RouteOptimizationCommand toCommand(RouteOptimizationRequestDTO dto) {
@@ -73,6 +125,36 @@ public class CollectorRouteResource {
         }
         StartLocationType type = dto.getType() == null ? null : StartLocationType.valueOf(dto.getType());
         return new StartLocation(type, dto.getAddressId(), dto.getLatitude(), dto.getLongitude());
+    }
+
+    public static class SaveRouteRequestDTO {
+        private String collectorId;
+        private String source;
+        private RouteOptimizationResult suggestion;
+
+        public String getCollectorId() {
+            return collectorId;
+        }
+
+        public void setCollectorId(String collectorId) {
+            this.collectorId = collectorId;
+        }
+
+        public String getSource() {
+            return source;
+        }
+
+        public void setSource(String source) {
+            this.source = source;
+        }
+
+        public RouteOptimizationResult getSuggestion() {
+            return suggestion;
+        }
+
+        public void setSuggestion(RouteOptimizationResult suggestion) {
+            this.suggestion = suggestion;
+        }
     }
 
     public static class RouteOptimizationRequestDTO {

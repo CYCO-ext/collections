@@ -23,6 +23,9 @@ public class CompletionUseCase {
     @Inject
     EventPort eventPort;
 
+    @Inject
+    CloseSavedRoutesUseCase closeSavedRoutesUseCase;
+
     public Uni<Void> confirmGeneratorCompletion(String requestId) {
         LOG.info("Generator confirming completion for request: {}", requestId);
 
@@ -59,7 +62,8 @@ public class CompletionUseCase {
         if (request.canMarkCompleted()) {
             request.setStatus(CollectionRequest.Status.COMPLETED);
             return collectionRequestPort.update(request)
-                    .flatMap(it -> publishCompletionEvent(request));
+                    .flatMap(it -> publishCompletionEvent(request))
+                    .flatMap(it -> closeSavedRoutesUseCase.closeRoutesContaining(request.getId()));
         }
         return Uni.createFrom().nullItem().replaceWithVoid();
     }
@@ -76,4 +80,3 @@ public class CompletionUseCase {
         return eventPort.publishCollectionEvent(event);
     }
 }
-

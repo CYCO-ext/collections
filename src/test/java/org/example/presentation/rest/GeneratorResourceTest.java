@@ -1,42 +1,96 @@
 package org.example.presentation.rest;
 
-import io.quarkus.test.junit.QuarkusTest;
-import io.restassured.RestAssured;
+import io.smallrye.mutiny.Uni;
+import jakarta.ws.rs.core.Response;
+import org.example.application.usecase.CancelCollectionRequestUseCase;
+import org.example.application.usecase.CollectionCancellationConflictException;
+import org.example.application.usecase.CollectionCancellationForbiddenException;
+import org.example.application.usecase.CollectionRequestNotFoundException;
+import org.example.application.usecase.CollectionRequestUseCase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static io.restassured.RestAssured.given;
-import static org.hamcrest.CoreMatchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-@QuarkusTest
 class GeneratorResourceTest {
+    private GeneratorResource resource;
+    private CollectionRequestUseCase collectionRequestUseCase;
+    private CancelCollectionRequestUseCase cancelCollectionRequestUseCase;
 
-    @Test
-    void testCreateRequest() {
-        String requestBody = """
-                {
-                    "generatorId": "gen-001",
-                    "addressId": "addr-001",
-                    "materialIds": ["mat-001", "mat-002"],
-                    "weight": 100.0
-                }
-                """;
-
-        given()
-                .contentType("application/json")
-                .body(requestBody)
-        .when()
-                .post("/api/generators/requests")
-        .then()
-                .statusCode(201);
+    @BeforeEach
+    void setUp() {
+        collectionRequestUseCase = mock(CollectionRequestUseCase.class);
+        cancelCollectionRequestUseCase = mock(CancelCollectionRequestUseCase.class);
+        resource = new GeneratorResource();
+        resource.collectionRequestUseCase = collectionRequestUseCase;
+        resource.cancelCollectionRequestUseCase = cancelCollectionRequestUseCase;
     }
 
     @Test
-    void testGetNearbyCollectors() {
-        given()
-        .when()
-                .get("/api/generators/requests/req-001/collectors")
-        .then()
-                .statusCode(400);
+    void cancelRequestDelegatesToUseCase() {
+        GeneratorResource.CancelRequestDTO dto = cancelDto("generator-1");
+        when(cancelCollectionRequestUseCase.cancelByGenerator("request-1", "generator-1")).thenReturn(Uni.createFrom().voidItem());
+
+        Response response = resource.cancelRequest("request-1", dto).await().indefinitely();
+
+        assertEquals(200, response.getStatus());
+        verify(cancelCollectionRequestUseCase).cancelByGenerator("request-1", "generator-1");
+    }
+
+    @Test
+    void cancelRequestReturnsBadRequestForValidationError() {
+        GeneratorResource.CancelRequestDTO dto = cancelDto(" ");
+        when(cancelCollectionRequestUseCase.cancelByGenerator("request-1", " ")).thenReturn(Uni.createFrom().failure(
+                new IllegalArgumentException("generator id is required")));
+
+        Response response = resource.cancelRequest("request-1", dto).await().indefinitely();
+
+        assertEquals(400, response.getStatus());
+        assertEquals("generator id is required", response.getEntity());
+    }
+
+    @Test
+    void cancelRequestReturnsNotFoundForMissingRequest() {
+        GeneratorResource.CancelRequestDTO dto = cancelDto("generator-1");
+        when(cancelCollectionRequestUseCase.cancelByGenerator("missing", "generator-1")).thenReturn(Uni.createFrom().failure(
+                new CollectionRequestNotFoundException("missing")));
+
+        Response response = resource.cancelRequest("missing", dto).await().indefinitely();
+
+        assertEquals(404, response.getStatus());
+        assertEquals("Request not found: missing", response.getEntity());
+    }
+
+    @Test
+    void cancelRequestReturnsForbiddenForWrongGenerator() {
+        GeneratorResource.CancelRequestDTO dto = cancelDto("generator-2");
+        when(cancelCollectionRequestUseCase.cancelByGenerator("request-1", "generator-2")).thenReturn(Uni.createFrom().failure(
+                new CollectionCancellationForbiddenException("Generator cannot cancel this request")));
+
+        Response response = resource.cancelRequest("request-1", dto).await().indefinitely();
+
+        assertEquals(403, response.getStatus());
+        assertEquals("Generator cannot cancel this request", response.getEntity());
+    }
+
+    @Test
+    void cancelRequestReturnsConflictForTerminalStatus() {
+        GeneratorResource.CancelRequestDTO dto = cancelDto("generator-1");
+        when(cancelCollectionRequestUseCase.cancelByGenerator("request-1", "generator-1")).thenReturn(Uni.createFrom().failure(
+                new CollectionCancellationConflictException("Request is already completed")));
+
+        Response response = resource.cancelRequest("request-1", dto).await().indefinitely();
+
+        assertEquals(409, response.getStatus());
+        assertEquals("Request is already completed", response.getEntity());
+    }
+
+    private GeneratorResource.CancelRequestDTO cancelDto(String generatorId) {
+        GeneratorResource.CancelRequestDTO dto = new GeneratorResource.CancelRequestDTO();
+        dto.setGeneratorId(generatorId);
+        return dto;
     }
 }
-

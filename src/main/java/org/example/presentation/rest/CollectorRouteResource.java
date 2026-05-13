@@ -3,16 +3,20 @@ package org.example.presentation.rest;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.example.application.route.RouteModels.*;
 import org.example.application.route.SavedRouteModels.SaveRouteSuggestionCommand;
+import org.example.application.usecase.DeleteSavedRouteSuggestionUseCase;
 import org.example.application.usecase.DuplicateSavedRouteException;
 import org.example.application.usecase.ListSavedRoutesUseCase;
+import org.example.application.usecase.SavedRouteSuggestionNotFoundException;
 import org.example.application.usecase.RouteOptimizationUseCase;
 import org.example.application.usecase.SaveRouteSuggestionUseCase;
 import org.slf4j.Logger;
@@ -34,6 +38,9 @@ public class CollectorRouteResource {
 
     @Inject
     ListSavedRoutesUseCase listSavedRoutesUseCase;
+
+    @Inject
+    DeleteSavedRouteSuggestionUseCase deleteSavedRouteSuggestionUseCase;
 
     @POST
     @Path("/suggest")
@@ -83,6 +90,22 @@ public class CollectorRouteResource {
                 .onItem().transform(results -> Response.ok(results).build())
                 .onFailure().recoverWithItem(ex -> {
                     LOG.error("Error listing saved routes", ex);
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
+                });
+    }
+
+    @DELETE
+    @Path("/saved/{savedRouteId}")
+    public Uni<Response> deleteSavedRoute(@PathParam("savedRouteId") String savedRouteId) {
+        LOG.info("DELETE /collectors/routes/saved/{}", savedRouteId);
+        return deleteSavedRouteSuggestionUseCase.delete(savedRouteId)
+                .onItem().transform(it -> Response.noContent().build())
+                .onFailure(SavedRouteSuggestionNotFoundException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.NOT_FOUND).entity(ex.getMessage()).build())
+                .onFailure(IllegalArgumentException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build())
+                .onFailure().recoverWithItem(ex -> {
+                    LOG.error("Error deleting saved route", ex);
                     return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
                 });
     }

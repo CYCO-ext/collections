@@ -8,8 +8,10 @@ import org.example.application.route.RouteModels.SolverMetadata;
 import org.example.application.route.RouteModels.SolverStatus;
 import org.example.application.route.SavedRouteModels.SavedRouteResult;
 import org.example.application.route.SavedRouteModels.SavedRouteStatus;
+import org.example.application.usecase.DeleteSavedRouteSuggestionUseCase;
 import org.example.application.usecase.DuplicateSavedRouteException;
 import org.example.application.usecase.ListSavedRoutesUseCase;
+import org.example.application.usecase.SavedRouteSuggestionNotFoundException;
 import org.example.application.usecase.RouteOptimizationUseCase;
 import org.example.application.usecase.SaveRouteSuggestionUseCase;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,16 +31,19 @@ class CollectorRouteResourceTest {
     private RouteOptimizationUseCase routeOptimizationUseCase;
     private SaveRouteSuggestionUseCase saveRouteSuggestionUseCase;
     private ListSavedRoutesUseCase listSavedRoutesUseCase;
+    private DeleteSavedRouteSuggestionUseCase deleteSavedRouteSuggestionUseCase;
 
     @BeforeEach
     void setUp() {
         routeOptimizationUseCase = mock(RouteOptimizationUseCase.class);
         saveRouteSuggestionUseCase = mock(SaveRouteSuggestionUseCase.class);
         listSavedRoutesUseCase = mock(ListSavedRoutesUseCase.class);
+        deleteSavedRouteSuggestionUseCase = mock(DeleteSavedRouteSuggestionUseCase.class);
         resource = new CollectorRouteResource();
         resource.routeOptimizationUseCase = routeOptimizationUseCase;
         resource.saveRouteSuggestionUseCase = saveRouteSuggestionUseCase;
         resource.listSavedRoutesUseCase = listSavedRoutesUseCase;
+        resource.deleteSavedRouteSuggestionUseCase = deleteSavedRouteSuggestionUseCase;
     }
 
     @Test
@@ -101,6 +106,49 @@ class CollectorRouteResourceTest {
 
         assertEquals(200, response.getStatus());
         assertEquals(List.of(saved), response.getEntity());
+    }
+
+    @Test
+    void deleteSavedRouteReturnsNoContent() {
+        when(deleteSavedRouteSuggestionUseCase.delete("saved-1")).thenReturn(io.smallrye.mutiny.Uni.createFrom().voidItem());
+
+        Response response = resource.deleteSavedRoute("saved-1").await().indefinitely();
+
+        assertEquals(204, response.getStatus());
+        verify(deleteSavedRouteSuggestionUseCase).delete("saved-1");
+    }
+
+    @Test
+    void deleteSavedRouteReturnsBadRequestForValidationError() {
+        when(deleteSavedRouteSuggestionUseCase.delete(" ")).thenReturn(io.smallrye.mutiny.Uni.createFrom().failure(
+                new IllegalArgumentException("saved route id is required")));
+
+        Response response = resource.deleteSavedRoute(" ").await().indefinitely();
+
+        assertEquals(400, response.getStatus());
+        assertEquals("saved route id is required", response.getEntity());
+    }
+
+    @Test
+    void deleteSavedRouteReturnsNotFoundForMissingSuggestion() {
+        when(deleteSavedRouteSuggestionUseCase.delete("missing")).thenReturn(io.smallrye.mutiny.Uni.createFrom().failure(
+                new SavedRouteSuggestionNotFoundException("missing")));
+
+        Response response = resource.deleteSavedRoute("missing").await().indefinitely();
+
+        assertEquals(404, response.getStatus());
+        assertEquals("Saved route suggestion not found: missing", response.getEntity());
+    }
+
+    @Test
+    void deleteSavedRouteReturnsInternalServerErrorForUnexpectedFailure() {
+        when(deleteSavedRouteSuggestionUseCase.delete("saved-1")).thenReturn(io.smallrye.mutiny.Uni.createFrom().failure(
+                new RuntimeException("mongo unavailable")));
+
+        Response response = resource.deleteSavedRoute("saved-1").await().indefinitely();
+
+        assertEquals(500, response.getStatus());
+        assertEquals("mongo unavailable", response.getEntity());
     }
 
     private CollectorRouteResource.SaveRouteRequestDTO saveRequest() {

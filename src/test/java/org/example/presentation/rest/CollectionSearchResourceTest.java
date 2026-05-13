@@ -2,6 +2,7 @@ package org.example.presentation.rest;
 
 import io.smallrye.mutiny.Uni;
 import jakarta.ws.rs.core.Response;
+import org.example.application.usecase.CollectionAddressNotFoundException;
 import org.example.application.usecase.CollectionNotFoundException;
 import org.example.application.usecase.GetCollectionByIdUseCase;
 import org.example.application.usecase.SearchCollectionsUseCase;
@@ -32,7 +33,7 @@ class CollectionSearchResourceTest {
     }
 
     @Test
-    void searchReturnsUseCaseResults() {
+    void searchReturnsUseCaseResultsWithAddress() {
         SearchCollectionsUseCase.CollectionSearchResult newest = result("request-new", CollectionRequest.Status.PENDING, LocalDateTime.now());
         SearchCollectionsUseCase.CollectionSearchResult oldest = result("request-old", CollectionRequest.Status.PENDING, LocalDateTime.now().minusDays(1));
         when(searchUseCase.search(null, null, null)).thenReturn(Uni.createFrom().item(List.of(newest, oldest)));
@@ -43,6 +44,7 @@ class CollectionSearchResourceTest {
         List<?> results = (List<?>) response.getEntity();
         assertEquals(2, results.size());
         assertEquals(newest, results.getFirst());
+        assertEquals("Main St", newest.address().street());
         verify(searchUseCase).search(null, null, null);
     }
 
@@ -68,7 +70,18 @@ class CollectionSearchResourceTest {
     }
 
     @Test
-    void getByIdReturnsUseCaseResult() {
+    void searchReturnsNotFoundForMissingAddress() {
+        when(searchUseCase.search(null, null, null)).thenReturn(Uni.createFrom().failure(
+                new CollectionAddressNotFoundException("missing-address")));
+
+        Response response = resource.search(null, null, null).await().indefinitely();
+
+        assertEquals(404, response.getStatus());
+        assertEquals("Collection address not found: missing-address", response.getEntity());
+    }
+
+    @Test
+    void getByIdReturnsUseCaseResultWithAddress() {
         SearchCollectionsUseCase.CollectionSearchResult result = result("request-1", CollectionRequest.Status.IN_PROGRESS, LocalDateTime.now());
         when(getByIdUseCase.getById("request-1")).thenReturn(Uni.createFrom().item(result));
 
@@ -76,6 +89,7 @@ class CollectionSearchResourceTest {
 
         assertEquals(200, response.getStatus());
         assertEquals(result, response.getEntity());
+        assertEquals("Main St", result.address().street());
         verify(getByIdUseCase).getById("request-1");
     }
 
@@ -101,11 +115,34 @@ class CollectionSearchResourceTest {
         assertEquals("Collection request not found: missing", response.getEntity());
     }
 
+    @Test
+    void getByIdReturnsNotFoundForMissingAddress() {
+        when(getByIdUseCase.getById("request-1")).thenReturn(Uni.createFrom().failure(
+                new CollectionAddressNotFoundException("missing-address")));
+
+        Response response = resource.getById("request-1").await().indefinitely();
+
+        assertEquals(404, response.getStatus());
+        assertEquals("Collection address not found: missing-address", response.getEntity());
+    }
+
     private SearchCollectionsUseCase.CollectionSearchResult result(String id, CollectionRequest.Status status, LocalDateTime createdAt) {
         return new SearchCollectionsUseCase.CollectionSearchResult(
                 id,
                 "generator-1",
                 "address-1",
+                new SearchCollectionsUseCase.CollectionAddressResult(
+                        "address-1",
+                        "Main St",
+                        "100",
+                        "Sao Paulo",
+                        "SP",
+                        "01000-000",
+                        -23.5505,
+                        -46.6333,
+                        "ENRICHED",
+                        "nominatim"
+                ),
                 List.of("paper"),
                 10.0,
                 status,

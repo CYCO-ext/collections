@@ -16,4 +16,6 @@ public interface SavedRoutePort {
     Uni<List<SavedRouteSuggestion>> findOpenContainingCollectionRequest(String collectionRequestId);
 
     Uni<Void> close(String savedRouteId, LocalDateTime closedAt);
+
+    Uni<Boolean> deleteById(String savedRouteId);
 }

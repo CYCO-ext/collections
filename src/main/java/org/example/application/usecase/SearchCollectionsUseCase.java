@@ -3,7 +3,9 @@ package org.example.application.usecase;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import org.example.application.port.out.AddressPort;
 import org.example.application.port.out.CollectionRequestPort;
+import org.example.domain.entity.Address;
 import org.example.domain.entity.CollectionRequest;
 
 import java.time.LocalDateTime;
@@ -16,6 +18,9 @@ public class SearchCollectionsUseCase {
     @Inject
     CollectionRequestPort collectionRequestPort;
 
+    @Inject
+    AddressPort addressPort;
+
     public Uni<List<CollectionSearchResult>> search(String statusFilter, String collectorId, String generatorId) {
         CollectionSearchQuery query = new CollectionSearchQuery(
                 parseStatus(statusFilter),
@@ -23,9 +28,24 @@ public class SearchCollectionsUseCase {
                 normalizeOptionalId(generatorId)
         );
         return collectionRequestPort.search(query)
-                .onItem().transform(requests -> requests.stream()
-                        .map(CollectionSearchResult::from)
-                        .toList());
+                .flatMap(requests -> {
+                    List<Uni<CollectionSearchResult>> resultLookups = requests.stream()
+                            .map(this::toResult)
+                            .toList();
+                    if (resultLookups.isEmpty()) {
+                        return Uni.createFrom().item(List.of());
+                    }
+                    return Uni.combine().all().unis(resultLookups)
+                            .with(items -> items.stream()
+                                    .map(CollectionSearchResult.class::cast)
+                                    .toList());
+                });
+    }
+
+    Uni<CollectionSearchResult> toResult(CollectionRequest request) {
+        return addressPort.findById(request.getAddressId())
+                .onItem().ifNull().failWith(() -> new CollectionAddressNotFoundException(request.getAddressId()))
+                .onItem().transform(address -> CollectionSearchResult.from(request, address));
     }
 
     private CollectionRequest.Status parseStatus(String statusFilter) {
@@ -54,10 +74,39 @@ public class SearchCollectionsUseCase {
     ) {
     }
 
+    public record CollectionAddressResult(
+            String id,
+            String street,
+            String number,
+            String city,
+            String state,
+            String zipCode,
+            Double latitude,
+            Double longitude,
+            String enrichmentStatus,
+            String enrichmentSource
+    ) {
+        static CollectionAddressResult from(Address address) {
+            return new CollectionAddressResult(
+                    address.getId(),
+                    address.getStreet(),
+                    address.getNumber(),
+                    address.getCity(),
+                    address.getState(),
+                    address.getZipCode(),
+                    address.getLatitude(),
+                    address.getLongitude(),
+                    address.getEnrichmentStatus(),
+                    address.getEnrichmentSource()
+            );
+        }
+    }
+
     public record CollectionSearchResult(
             String id,
             String generatorId,
             String addressId,
+            CollectionAddressResult address,
             List<String> materialIds,
             Double weight,
             CollectionRequest.Status status,
@@ -67,11 +116,12 @@ public class SearchCollectionsUseCase {
             LocalDateTime createdAt,
             LocalDateTime updatedAt
     ) {
-        static CollectionSearchResult from(CollectionRequest request) {
+        static CollectionSearchResult from(CollectionRequest request, Address address) {
             return new CollectionSearchResult(
                     request.getId(),
                     request.getGeneratorId(),
                     request.getAddressId(),
+                    CollectionAddressResult.from(address),
                     request.getMaterialIds(),
                     request.getWeight(),
                     request.getStatus(),

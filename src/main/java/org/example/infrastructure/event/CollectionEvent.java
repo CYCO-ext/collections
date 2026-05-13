@@ -10,6 +10,8 @@ public class CollectionEvent {
     private String collectorId;
     private String status;
     private String timestamp;
+    private String actorType;
+    private String actorId;
 
     @JsonCreator
     public CollectionEvent(
@@ -18,33 +20,83 @@ public class CollectionEvent {
             @JsonProperty("generatorId") String generatorId,
             @JsonProperty("collectorId") String collectorId,
             @JsonProperty("status") String status,
-            @JsonProperty("timestamp") String timestamp) {
+            @JsonProperty("timestamp") String timestamp,
+            @JsonProperty("actorType") String actorType,
+            @JsonProperty("actorId") String actorId) {
         this.eventType = eventType;
         this.requestId = requestId;
         this.generatorId = generatorId;
         this.collectorId = collectorId;
         this.status = status;
         this.timestamp = timestamp;
+        this.actorType = actorType;
+        this.actorId = actorId;
     }
 
-    public CollectionEvent() {}
+    public CollectionEvent() {
+    }
 
-    public String getEventType() { return eventType; }
-    public void setEventType(String eventType) { this.eventType = eventType; }
+    public String getEventType() {
+        return eventType;
+    }
 
-    public String getRequestId() { return requestId; }
-    public void setRequestId(String requestId) { this.requestId = requestId; }
+    public void setEventType(String eventType) {
+        this.eventType = eventType;
+    }
 
-    public String getGeneratorId() { return generatorId; }
-    public void setGeneratorId(String generatorId) { this.generatorId = generatorId; }
+    public String getRequestId() {
+        return requestId;
+    }
 
-    public String getCollectorId() { return collectorId; }
-    public void setCollectorId(String collectorId) { this.collectorId = collectorId; }
+    public void setRequestId(String requestId) {
+        this.requestId = requestId;
+    }
 
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
+    public String getGeneratorId() {
+        return generatorId;
+    }
 
-    public String getTimestamp() { return timestamp; }
-    public void setTimestamp(String timestamp) { this.timestamp = timestamp; }
+    public void setGeneratorId(String generatorId) {
+        this.generatorId = generatorId;
+    }
+
+    public String getCollectorId() {
+        return collectorId;
+    }
+
+    public void setCollectorId(String collectorId) {
+        this.collectorId = collectorId;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(String timestamp) {
+        this.timestamp = timestamp;
+    }
+
+    public String getActorType() {
+        return actorType;
+    }
+
+    public void setActorType(String actorType) {
+        this.actorType = actorType;
+    }
+
+    public String getActorId() {
+        return actorId;
+    }
+
+    public void setActorId(String actorId) {
+        this.actorId = actorId;
+    }
 }
-

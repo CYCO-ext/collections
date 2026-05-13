@@ -82,6 +82,12 @@ public class SavedRouteRepository {
                 .replaceWithVoid();
     }
 
+    public Uni<Boolean> deleteById(String savedRouteId) {
+        return getCollection()
+                .deleteOne(Filters.eq("_id", savedRouteId))
+                .onItem().transform(result -> result.getDeletedCount() > 0);
+    }
+
     private Document toDocument(SavedRouteSuggestion route) {
         return new Document()
                 .append("_id", route.id())

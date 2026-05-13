@@ -5,6 +5,10 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.example.application.usecase.CancelCollectionRequestUseCase;
+import org.example.application.usecase.CollectionCancellationConflictException;
+import org.example.application.usecase.CollectionCancellationForbiddenException;
+import org.example.application.usecase.CollectionRequestNotFoundException;
 import org.example.application.usecase.CollectorAddressNotFoundException;
 import org.example.application.usecase.CollectorNotFoundException;
 import org.example.application.usecase.CollectorResponseUseCase;
@@ -28,6 +32,9 @@ public class CollectorResource {
 
     @Inject
     GetCollectorAddressUseCase getCollectorAddressUseCase;
+
+    @Inject
+    CancelCollectionRequestUseCase cancelCollectionRequestUseCase;
 
     @GET
     @Path("/{collectorId}/address")
@@ -89,11 +96,50 @@ public class CollectorResource {
                 });
     }
 
+    @POST
+    @Path("/requests/{requestId}/cancel")
+    public Uni<Response> cancelRequest(
+            @PathParam("requestId") String requestId,
+            CancelRequestDTO dto) {
+        LOG.info("POST /collectors/requests/{}/cancel", requestId);
+
+        String collectorId = dto == null ? null : dto.getCollectorId();
+        return cancelCollectionRequestUseCase.cancelByCollector(requestId, collectorId)
+                .onItem().transform(it -> Response.ok().build())
+                .onFailure(CollectionRequestNotFoundException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.NOT_FOUND).entity(ex.getMessage()).build())
+                .onFailure(CollectionCancellationForbiddenException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.FORBIDDEN).entity(ex.getMessage()).build())
+                .onFailure(CollectionCancellationConflictException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.CONFLICT).entity(ex.getMessage()).build())
+                .onFailure(IllegalArgumentException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build())
+                .onFailure().recoverWithItem(ex -> {
+                    LOG.error("Error cancelling request by collector", ex);
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
+                });
+    }
+
     // DTOs
     public static class SelectCollectorDTO {
         private String collectorId;
 
         public SelectCollectorDTO() {
+        }
+
+        public String getCollectorId() {
+            return collectorId;
+        }
+
+        public void setCollectorId(String collectorId) {
+            this.collectorId = collectorId;
+        }
+    }
+
+    public static class CancelRequestDTO {
+        private String collectorId;
+
+        public CancelRequestDTO() {
         }
 
         public String getCollectorId() {

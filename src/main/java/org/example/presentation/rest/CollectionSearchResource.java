@@ -10,6 +10,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.example.application.usecase.CollectionAddressNotFoundException;
 import org.example.application.usecase.CollectionNotFoundException;
 import org.example.application.usecase.GetCollectionByIdUseCase;
 import org.example.application.usecase.SearchCollectionsUseCase;
@@ -37,6 +38,8 @@ public class CollectionSearchResource {
         LOG.info("GET /collections/search status={} collectorId={} generatorId={}", status, collectorId, generatorId);
         return searchCollectionsUseCase.search(status, collectorId, generatorId)
                 .onItem().transform(results -> Response.ok(results).build())
+                .onFailure(CollectionAddressNotFoundException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.NOT_FOUND).entity(ex.getMessage()).build())
                 .onFailure(IllegalArgumentException.class).recoverWithItem(ex ->
                         Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build())
                 .onFailure().recoverWithItem(ex -> {
@@ -52,6 +55,8 @@ public class CollectionSearchResource {
         return getCollectionByIdUseCase.getById(id)
                 .onItem().transform(result -> Response.ok(result).build())
                 .onFailure(CollectionNotFoundException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.NOT_FOUND).entity(ex.getMessage()).build())
+                .onFailure(CollectionAddressNotFoundException.class).recoverWithItem(ex ->
                         Response.status(Response.Status.NOT_FOUND).entity(ex.getMessage()).build())
                 .onFailure(IllegalArgumentException.class).recoverWithItem(ex ->
                         Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build())

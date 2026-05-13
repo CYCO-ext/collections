@@ -12,11 +12,14 @@ public class GetCollectionByIdUseCase {
     @Inject
     CollectionRequestPort collectionRequestPort;
 
+    @Inject
+    SearchCollectionsUseCase searchCollectionsUseCase;
+
     public Uni<CollectionSearchResult> getById(String id) {
         String normalizedId = normalizeId(id);
         return collectionRequestPort.findById(normalizedId)
                 .onItem().ifNull().failWith(() -> new CollectionNotFoundException(normalizedId))
-                .onItem().transform(CollectionSearchResult::from);
+                .flatMap(searchCollectionsUseCase::toResult);
     }
 
     private String normalizeId(String id) {

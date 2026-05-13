@@ -40,4 +40,9 @@ public class SavedRouteAdapter implements SavedRoutePort {
     public Uni<Void> close(String savedRouteId, LocalDateTime closedAt) {
         return repository.close(savedRouteId, closedAt);
     }
+
+    @Override
+    public Uni<Boolean> deleteById(String savedRouteId) {
+        return repository.deleteById(savedRouteId);
+    }
 }

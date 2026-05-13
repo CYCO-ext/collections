@@ -125,6 +125,20 @@ Response: 201 Created
 }
 ```
 
+**Cancel Collection Request**
+```http
+POST /api/generators/requests/{requestId}/cancel
+Content-Type: application/json
+
+{
+  "generatorId": "gen-001"
+}
+
+Response: 200 OK
+```
+
+Generators can cancel their own `PENDING` or `IN_PROGRESS` collection requests. Blank ids return HTTP 400, unknown requests return HTTP 404, another generator's request returns HTTP 403, and completed or already canceled requests return HTTP 409.
+
 **Get Nearby Collectors**
 ```
 GET /api/generators/requests/{requestId}/collectors
@@ -153,6 +167,20 @@ Content-Type: application/json
 
 Response: 200 OK
 ```
+
+**Cancel Collection Request**
+```http
+POST /api/collectors/requests/{requestId}/cancel
+Content-Type: application/json
+
+{
+  "collectorId": "coll-001"
+}
+
+Response: 200 OK
+```
+
+Collectors can cancel assigned `PENDING` or `IN_PROGRESS` collection requests. Blank ids return HTTP 400, unknown requests return HTTP 404, unassigned or differently assigned requests return HTTP 403, and completed or already canceled requests return HTTP 409.
 
 **Accept Request**
 ```
@@ -290,6 +318,15 @@ Response: 200 OK
 ]
 ```
 
+**Delete Saved Route Suggestion**
+```http
+DELETE /api/collectors/routes/saved/{savedRouteId}
+
+Response: 204 No Content
+```
+
+Blank saved route ids return HTTP 400. Unknown saved route ids return HTTP 404 with `Saved route suggestion not found: {savedRouteId}`.
+
 ### Collection Search
 
 **Search Collection Requests**
@@ -306,6 +343,18 @@ Response: 200 OK
     "id": "req-001",
     "generatorId": "gen-001",
     "addressId": "addr-001",
+    "address": {
+      "id": "addr-001",
+      "street": "Main St",
+      "number": "100",
+      "city": "Sao Paulo",
+      "state": "SP",
+      "zipCode": "01000-000",
+      "latitude": -23.5505,
+      "longitude": -46.6333,
+      "enrichmentStatus": "ENRICHED",
+      "enrichmentSource": "nominatim"
+    },
     "materialIds": ["mat-001", "mat-002"],
     "weight": 100.0,
     "status": "IN_PROGRESS",
@@ -318,7 +367,7 @@ Response: 200 OK
 ]
 ```
 
-The `status`, `collectorId`, and `generatorId` query parameters are optional. Supported status values are `PENDING`, `IN_PROGRESS`, `COMPLETED`, and `REJECTED`. When multiple filters are provided, all must match. Results are always ordered by `createdAt` descending, so the newest collection requests appear first. Invalid status values return HTTP 400.
+The `status`, `collectorId`, and `generatorId` query parameters are optional. Supported status values are `PENDING`, `IN_PROGRESS`, `COMPLETED`, `REJECTED`, and `CANCELLED`. When multiple filters are provided, all must match. Results are always ordered by `createdAt` descending, so the newest collection requests appear first. Invalid status values return HTTP 400. Missing collection addresses return HTTP 404 with `Collection address not found: {addressId}`.
 
 **Get Collection Request by ID**
 ```
@@ -329,6 +378,18 @@ Response: 200 OK
   "id": "req-001",
   "generatorId": "gen-001",
   "addressId": "addr-001",
+  "address": {
+    "id": "addr-001",
+    "street": "Main St",
+    "number": "100",
+    "city": "Sao Paulo",
+    "state": "SP",
+    "zipCode": "01000-000",
+    "latitude": -23.5505,
+    "longitude": -46.6333,
+    "enrichmentStatus": "ENRICHED",
+    "enrichmentSource": "nominatim"
+  },
   "materialIds": ["mat-001", "mat-002"],
   "weight": 100.0,
   "status": "IN_PROGRESS",
@@ -340,7 +401,7 @@ Response: 200 OK
 }
 ```
 
-Blank ids return HTTP 400. Existing but unknown ids return HTTP 404 with `Collection request not found: {id}`.
+Blank ids return HTTP 400. Existing but unknown ids return HTTP 404 with `Collection request not found: {id}`. Missing collection addresses return HTTP 404 with `Collection address not found: {addressId}`.
 
 ### Completion Endpoints
 

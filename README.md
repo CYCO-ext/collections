@@ -99,6 +99,16 @@ src/
             └── CompletionResourceTest.java
 ```
 
+## Kafka Integration
+
+Incoming topics:
+
+- `addresses-sync`: synchronizes and enriches address data.
+- `collector-sync`: creates or syncs collector snapshots using `SyncCollectorEvent` payloads.
+- `collector-update`: updates collector snapshots using the same `SyncCollectorEvent` payload shape as collector creation/sync.
+
+Collector sync and update events upsert the collector by `collectorId`, enrich or fallback the embedded address, upsert the address, and replace collector fields including `userId`, `name`, `address`, `acceptedMaterialIds`, and `acceptanceRate`.
+
 ## REST API Endpoints
 
 ### Generator Endpoints

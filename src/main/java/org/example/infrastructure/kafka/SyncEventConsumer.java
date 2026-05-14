@@ -1,5 +1,6 @@
 package org.example.infrastructure.kafka;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.reactive.messaging.kafka.KafkaRecord;
@@ -36,10 +37,13 @@ public class SyncEventConsumer {
     @Inject
     CollectorRepository collectorRepository;
 
+    @Inject
+    ObjectMapper objectMapper;
+
     @Incoming("addresses-sync")
     @Blocking
-    public Uni<Void> consumeAddress(KafkaRecord<String, SyncAddressEvent> record) {
-        SyncAddressEvent event = record.getPayload();
+    public Uni<Void> consumeAddress(KafkaRecord<String, String> record) {
+        SyncAddressEvent event = readPayload(record.getPayload(), SyncAddressEvent.class);
         LOG.info("Syncing address: {}", event.zipCode());
 
         return addressEnrichmentPort.enrich(event)
@@ -67,22 +71,39 @@ public class SyncEventConsumer {
 
     @Incoming("collector-sync")
     @Blocking
-    public Uni<Void> consumeCollector(KafkaRecord<String, SyncCollectorEvent> record) {
-        SyncCollectorEvent event = record.getPayload();
-        LOG.info("Syncing collector: {}", event.collectorId());
+    public Uni<Void> consumeCollector(KafkaRecord<String, String> record) {
+        return syncCollector(readPayload(record.getPayload(), SyncCollectorEvent.class), "synced");
+    }
+
+    @Incoming("collector-update")
+    @Blocking
+    public Uni<Void> consumeCollectorUpdate(KafkaRecord<String, String> record) {
+        return syncCollector(readPayload(record.getPayload(), SyncCollectorEvent.class), "updated");
+    }
+
+    private Uni<Void> syncCollector(SyncCollectorEvent event, String operation) {
+        LOG.info("Collector {} requested: {}", operation, event.collectorId());
 
         return addressEnrichmentPort.enrich(event.address())
                 .flatMap(enriched -> addressRepository.upsert(enriched)
                         .flatMap(ignored -> collectorRepository.upsert(toCollector(event, enriched)))
-                        .invoke(() -> LOG.info("Collector synced with enriched address: {}", event.collectorId()))
+                        .invoke(() -> LOG.info("Collector {} with enriched address: {}", operation, event.collectorId()))
                 )
                 .onFailure().recoverWithUni(ex -> {
-                    LOG.error("Failed to enrich collector address: {}", event.collectorId(), ex);
+                    LOG.error("Failed to enrich collector address during {}: {}", operation, event.collectorId(), ex);
                     Address address = fallbackAddress(event.address());
                     return addressRepository.upsert(address)
                             .flatMap(ignored -> collectorRepository.upsert(toCollector(event, address)))
-                            .invoke(() -> LOG.info("Collector synced with failure status: {}", event.collectorId()));
+                            .invoke(() -> LOG.info("Collector {} with failure status: {}", operation, event.collectorId()));
                 });
+    }
+
+    private <T> T readPayload(String payload, Class<T> type) {
+        try {
+            return objectMapper.readValue(payload, type);
+        } catch (Exception ex) {
+            throw new IllegalArgumentException("Invalid " + type.getSimpleName() + " payload", ex);
+        }
     }
 
     private Collector toCollector(SyncCollectorEvent event, Address address) {

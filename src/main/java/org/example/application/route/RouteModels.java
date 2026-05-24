@@ -55,9 +55,7 @@ public final class RouteModels {
 
     public record RouteOptimizationCommand(
             String collectorId,
-            int vehicleCount,
-            Double vehicleCapacity,
-            List<Double> vehicleCapacities,
+            List<RouteVehicle> vehicles,
             StartLocation start,
             boolean endAtStart,
             List<String> candidateRequestIds,

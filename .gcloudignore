@@ -1,0 +1,6 @@
+.git
+.gitignore
+target/
+.DS_Store
+
+!ca.pem

@@ -1,727 +1,368 @@
-# Waste Collection Microservice
+# Cyco Collections Service
 
-Reactive microservice for managing waste collection requests using Java 21, Quarkus, MongoDB, and Kafka.
+## 1. Descricao funcional
 
-## Project Status
+**Nome do microsservico:** `cyco-collections`
 
-✅ **Development Complete** - All 16 implementation tasks completed
+O `cyco-collections` e o microsservico responsavel por gerenciar solicitacoes de coleta de residuos dentro da plataforma Cyco. Ele concentra o ciclo de vida da coleta, desde a criacao da solicitacao pelo gerador ate a selecao do coletor, aceite, cancelamento, conclusao e planejamento de rotas.
 
-## Architecture
+Principais responsabilidades:
 
-### Hexagonal (Ports & Adapters)
-```
-┌─────────────────────────────────────────────────────┐
-│           PRESENTATION LAYER                        │
-│  (REST Resources: Generator, Collector, Completion) │
-└─────────────────────┬───────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────┐
-│         APPLICATION LAYER                           │
-│  (Use Cases & Ports)                                │
-│  - CollectionRequestUseCase                         │
-│  - CollectorSelectionUseCase                        │
-│  - CollectorResponseUseCase                         │
-│  - CompletionUseCase                                │
-└─────────────────────┬───────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────┐
-│         DOMAIN LAYER                                │
-│  (Entities & Business Logic)                        │
-│  - CollectionRequest, Collector, Material, Address │
-└─────────────────────┬───────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────┐
-│      INFRASTRUCTURE LAYER                           │
-│  (Repositories, Kafka, MongoDB)                     │
-│  - CollectionRequestRepository                      │
-│  - CollectorRepository, etc.                        │
-│  - SyncEventConsumer, CollectionEventProducer       │
-└─────────────────────────────────────────────────────┘
-```
+- Criar solicitacoes de coleta para geradores.
+- Buscar, filtrar e consultar coletas por status, identificador, gerador e coletor.
+- Selecionar, aceitar, rejeitar, cancelar e concluir solicitacoes.
+- Sincronizar dados de coletores e enderecos recebidos por eventos Kafka.
+- Enriquecer enderecos usando servicos externos.
+- Sugerir rotas para coletores com base em veiculos, capacidade e coletas em andamento.
+- Salvar, listar, mover coletas entre veiculos e excluir sugestoes de rota.
 
-## Directory Structure
+O servico foi implementado com Quarkus, Java 21, MongoDB, Kafka e arquitetura orientada a portas e adaptadores.
 
-```
-src/
-├── main/
-│   ├── java/org/example/
-│   │   ├── domain/
-│   │   │   └── entity/
-│   │   │       ├── CollectionRequest.java
-│   │   │       ├── Collector.java
-│   │   │       ├── Material.java
-│   │   │       └── Address.java
-│   │   ├── application/
-│   │   │   ├── port/out/
-│   │   │   │   ├── CollectionRequestPort.java
-│   │   │   │   ├── CollectorDiscoveryPort.java
-│   │   │   │   └── EventPort.java
-│   │   │   ├── adapter/
-│   │   │   │   ├── CollectionRequestAdapter.java
-│   │   │   │   ├── CollectorDiscoveryAdapter.java
-│   │   │   │   └── EventAdapter.java
-│   │   │   └── usecase/
-│   │   │       ├── CollectionRequestUseCase.java
-│   │   │       ├── CollectorSelectionUseCase.java
-│   │   │       ├── CollectorResponseUseCase.java
-│   │   │       └── CompletionUseCase.java
-│   │   ├── infrastructure/
-│   │   │   ├── repository/
-│   │   │   │   ├── CollectionRequestRepository.java
-│   │   │   │   ├── CollectorRepository.java
-│   │   │   │   ├── MaterialRepository.java
-│   │   │   │   └── AddressRepository.java
-│   │   │   ├── kafka/
-│   │   │   │   ├── SyncEventConsumer.java
-│   │   │   │   └── CollectionEventProducer.java
-│   │   │   └── event/
-│   │   │       ├── SyncMaterialEvent.java
-│   │   │       ├── SyncCollectorEvent.java
-│   │   │       └── CollectionEvent.java
-│   │   ├── presentation/
-│   │   │   └── rest/
-│   │   │       ├── GeneratorResource.java
-│   │   │       ├── CollectorResource.java
-│   │   │       └── CompletionResource.java
-│   │   └── Main.java
-│   └── resources/
-│       └── application.properties
-└── test/
-    └── java/org/example/
-        ├── application/usecase/
-        │   ├── CollectionRequestUseCaseTest.java
-        │   └── CompletionUseCaseTest.java
-        └── presentation/rest/
-            ├── GeneratorResourceTest.java
-            └── CompletionResourceTest.java
-```
+## 2. Endpoints da API
 
-## Kafka Integration
+A API REST usa o prefixo `/api`.
 
-Incoming topics:
+| Metodo | URL | Descricao |
+| --- | --- | --- |
+| `POST` | `/api/generators/requests` | Cria uma nova solicitacao de coleta. |
+| `GET` | `/api/generators/requests/{requestId}/collectors` | Lista coletores proximos e elegiveis para uma solicitacao. |
+| `POST` | `/api/generators/requests/{requestId}/cancel` | Cancela uma solicitacao pelo gerador. |
+| `GET` | `/api/collectors/{collectorId}/address` | Retorna o endereco cadastrado de um coletor. |
+| `POST` | `/api/collectors/requests/{requestId}/select` | Seleciona um coletor para uma solicitacao. |
+| `POST` | `/api/collectors/requests/{requestId}/accept` | Aceita uma solicitacao pelo coletor e coloca a coleta em andamento. |
+| `POST` | `/api/collectors/requests/{requestId}/reject` | Rejeita uma solicitacao pelo coletor. |
+| `POST` | `/api/collectors/requests/{requestId}/cancel` | Cancela uma solicitacao pelo coletor. |
+| `POST` | `/api/requests/{requestId}/confirm-generator` | Registra a confirmacao de conclusao pelo gerador. |
+| `POST` | `/api/requests/{requestId}/confirm-collector` | Registra a confirmacao de conclusao pelo coletor. |
+| `GET` | `/api/collections/search` | Pesquisa coletas por `status`, `collectorId` e `generatorId`, ordenando as mais recentes primeiro. |
+| `GET` | `/api/collections/{id}` | Busca uma coleta pelo identificador. |
+| `POST` | `/api/collectors/routes/suggest` | Gera sugestao de rota para coletas com status `IN_PROGRESS`. |
+| `POST` | `/api/collectors/routes/save` | Salva uma sugestao de rota. |
+| `GET` | `/api/collectors/routes/saved` | Lista todas as rotas salvas. |
+| `POST` | `/api/collectors/routes/saved/{savedRouteId}/move-request` | Move uma coleta entre veiculos de uma rota salva e recalcula as paradas. |
+| `DELETE` | `/api/collectors/routes/saved/{savedRouteId}` | Remove uma sugestao de rota salva. |
 
-- `addresses-sync`: synchronizes and enriches address data.
-- `collector-sync`: creates or syncs collector snapshots using `SyncCollectorEvent` payloads.
-- `collector-update`: updates collector snapshots using the same `SyncCollectorEvent` payload shape as collector creation/sync.
+## 3. Exemplos de requisicao e resposta
 
-Collector sync and update events upsert the collector by `collectorId`, enrich or fallback the embedded address, upsert the address, and replace collector fields including `userId`, `name`, `address`, `acceptedMaterialIds`, and `acceptanceRate`.
+### Criar solicitacao de coleta
 
-## REST API Endpoints
+**Requisicao**
 
-### Generator Endpoints
-
-**Create Collection Request**
-```
+```http
 POST /api/generators/requests
 Content-Type: application/json
+```
 
+```json
 {
-  "generatorId": "gen-001",
-  "addressId": "addr-001",
-  "materialIds": ["mat-001", "mat-002"],
-  "weight": 100.0
+  "generatorId": "generator-001",
+  "addressId": "address-001",
+  "materialIds": ["paper", "plastic"],
+  "weight": 12.5
 }
+```
 
-Response: 201 Created
+**Resposta esperada**
+
+```json
 {
-  "id": "req-001",
-  "generatorId": "gen-001",
-  "addressId": "addr-001",
+  "id": "collection-001",
+  "generatorId": "generator-001",
+  "collectorId": null,
+  "addressId": "address-001",
+  "materialIds": ["paper", "plastic"],
+  "weight": 12.5,
   "status": "PENDING",
-  ...
+  "createdAt": "2026-05-23T10:00:00Z",
+  "updatedAt": "2026-05-23T10:00:00Z"
 }
 ```
 
-**Cancel Collection Request**
+### Pesquisar coletas
+
+**Requisicao**
+
 ```http
-POST /api/generators/requests/{requestId}/cancel
-Content-Type: application/json
-
-{
-  "generatorId": "gen-001"
-}
-
-Response: 200 OK
+GET /api/collections/search?status=IN_PROGRESS&collectorId=collector-001&generatorId=generator-001
 ```
 
-Generators can cancel their own `PENDING` or `IN_PROGRESS` collection requests. Blank ids return HTTP 400, unknown requests return HTTP 404, another generator's request returns HTTP 403, and completed or already canceled requests return HTTP 409.
+**Resposta esperada**
 
-**Get Nearby Collectors**
-```
-GET /api/generators/requests/{requestId}/collectors
-
-Response: 200 OK
+```json
 [
   {
-    "id": "coll-001",
-    "name": "Collector 1",
-    "acceptanceRate": 0.9,
-    ...
+    "id": "collection-002",
+    "generatorId": "generator-001",
+    "collectorId": "collector-001",
+    "addressId": "address-002",
+    "materialIds": ["metal"],
+    "weight": 8.0,
+    "status": "IN_PROGRESS",
+    "createdAt": "2026-05-23T12:00:00Z",
+    "updatedAt": "2026-05-23T12:15:00Z"
   }
 ]
 ```
 
-### Collector Endpoints
+### Sugerir rota para coletor
 
-**Select Collector**
-```
-POST /api/collectors/requests/{requestId}/select
-Content-Type: application/json
+**Requisicao**
 
-{
-  "collectorId": "coll-001"
-}
-
-Response: 200 OK
-```
-
-**Cancel Collection Request**
 ```http
-POST /api/collectors/requests/{requestId}/cancel
-Content-Type: application/json
-
-{
-  "collectorId": "coll-001"
-}
-
-Response: 200 OK
-```
-
-Collectors can cancel assigned `PENDING` or `IN_PROGRESS` collection requests. Blank ids return HTTP 400, unknown requests return HTTP 404, unassigned or differently assigned requests return HTTP 403, and completed or already canceled requests return HTTP 409.
-
-**Accept Request**
-```
-POST /api/collectors/requests/{requestId}/accept
-
-Response: 200 OK
-```
-
-**Reject Request**
-```
-POST /api/collectors/requests/{requestId}/reject
-
-Response: 200 OK
-```
-
-**Get Collector Address**
-```
-GET /api/collectors/{collectorId}/address
-
-Response: 200 OK
-{
-  "collectorId": "coll-001",
-  "addressId": "addr-001",
-  "street": "Main St",
-  "number": "100",
-  "city": "Sao Paulo",
-  "state": "SP",
-  "zipCode": "01000-000",
-  "latitude": -23.5505,
-  "longitude": -46.6333,
-  "enrichmentStatus": "ENRICHED",
-  "enrichmentSource": "nominatim"
-}
-```
-
-Blank collector ids return HTTP 400. Missing collectors or collectors without address data return HTTP 404.
-
-**Suggest Optimized Routes**
-```
 POST /api/collectors/routes/suggest
 Content-Type: application/json
+```
 
+```json
 {
-  "collectorId": "coll-001",
-  "vehicleCount": 2,
-  "vehicleCapacity": 100.0,
+  "collectorId": "collector-001",
+  "vehicles": [
+    {
+      "capacity": 100.0
+    },
+    {
+      "capacity": 80.0
+    }
+  ],
   "start": {
     "type": "COORDINATES",
     "latitude": -23.5505,
     "longitude": -46.6333
   },
-  "candidateRequestIds": ["req-001", "req-002"],
+  "endAtStart": true,
+  "candidateRequestIds": ["collection-002", "collection-003"],
+  "filters": {
+    "materialIds": ["paper", "plastic"],
+    "maxDistanceKmFromStart": 50.0,
+    "onlyInProgress": true
+  },
   "options": {
     "timeLimitSeconds": 5,
-    "allowDroppingStops": true
+    "allowDroppingStops": true,
+    "dropPenalty": 100000
   }
 }
+```
 
-Response: 200 OK
+**Resposta esperada**
+
+```json
 {
-  "status": "FEASIBLE",
-  "solver": {
-    "engine": "OR_TOOLS",
-    "elapsedMs": 42,
-    "objectiveDistanceMeters": 18450,
-    "droppedStops": 0
-  },
+  "collectorId": "collector-001",
+  "engine": "OR_TOOLS",
   "routes": [
     {
       "vehicleIndex": 0,
-      "capacity": 100.0,
-      "totalLoad": 75.0,
-      "totalDistanceMeters": 9400,
-      "stops": []
+      "totalWeight": 20.5,
+      "totalDistanceKm": 14.2,
+      "stops": [
+        {
+          "sequence": 1,
+          "collectionRequestId": "collection-002",
+          "addressId": "address-002",
+          "weight": 8.0,
+          "distanceFromPreviousKm": 4.6
+        },
+        {
+          "sequence": 2,
+          "collectionRequestId": "collection-003",
+          "addressId": "address-003",
+          "weight": 12.5,
+          "distanceFromPreviousKm": 9.6
+        }
+      ]
     }
   ],
-  "unassigned": []
-}
-```
-
-Route suggestions are read-only. They do not select collectors, accept requests, or change collection request status. Only `IN_PROGRESS` collection requests are eligible for routing; other statuses are returned as unassigned. The MVP uses OR-Tools with a Haversine distance matrix; a road-network distance provider can be added behind the distance matrix port later.
-
-**Save Route Suggestion**
-```
-POST /api/collectors/routes/save
-Content-Type: application/json
-
-{
-  "collectorId": "coll-001",
-  "source": "ROUTE_SUGGESTION",
-  "suggestion": {
-    "status": "FEASIBLE",
-    "solver": {
-      "engine": "OR_TOOLS",
-      "elapsedMs": 42,
-      "objectiveDistanceMeters": 18450,
-      "droppedStops": 0
-    },
-    "routes": []
+  "unassigned": [],
+  "metadata": {
+    "timeLimitSeconds": 5,
+    "endAtStart": true
   }
 }
-
-Response: 201 Created
-{
-  "id": "saved-route-001",
-  "collectorId": "coll-001",
-  "status": "OPEN",
-  "fingerprint": "sha256...",
-  "assignedCollectionRequestIds": ["req-001"],
-  "createdAt": "2026-05-12T10:00:00",
-  "updatedAt": "2026-05-12T10:00:00",
-  "closedAt": null,
-  "suggestion": {}
-}
 ```
 
-Duplicate route suggestions for the same collector and same ordered stops return HTTP 409. Saved routes are `OPEN` until every assigned collection request is `COMPLETED`; routes saved after all assigned requests are already complete are immediately `CLOSED`.
+## 4. Dependencias externas
 
-**List Saved Routes**
-```
-GET /api/collectors/routes/saved
+| Dependencia | Tipo | Uso |
+| --- | --- | --- |
+| MongoDB | Banco de dados | Persistencia de coletas, coletores, enderecos, cache de enderecos e rotas salvas. |
+| Kafka / Aiven Kafka | Broker de mensagens | Consumo de eventos de sincronizacao e publicacao de eventos de coleta. |
+| ViaCEP | API externa | Enriquecimento de enderecos a partir de CEP. |
+| Nominatim OpenStreetMap | API externa | Geocodificacao e obtencao de coordenadas de enderecos. |
+| Google OR-Tools | Biblioteca nativa | Otimizacao das rotas sugeridas para os veiculos do coletor. |
+| Servico de cadastro/usuarios | Microsservico externo | Origem esperada dos eventos de sincronizacao de coletores e enderecos. |
 
-Response: 200 OK
-[
-  {
-    "id": "saved-route-001",
-    "collectorId": "coll-001",
-    "status": "OPEN",
-    "assignedCollectionRequestIds": ["req-001"],
-    "createdAt": "2026-05-12T10:00:00",
-    "updatedAt": "2026-05-12T10:00:00",
-    "closedAt": null,
-    "suggestion": {}
-  }
-]
-```
+Principais variaveis de ambiente:
 
-**Delete Saved Route Suggestion**
-```http
-DELETE /api/collectors/routes/saved/{savedRouteId}
-
-Response: 204 No Content
+```env
+QUARKUS_MONGODB_CONNECTION_STRING=mongodb+srv://<usuario>:<senha>@<cluster>/<database>
+QUARKUS_KAFKA_BOOTSTRAP_SERVERS=<host-kafka>:<porta>
+KAFKA_SECURITY_PROTOCOL=SASL_SSL
+KAFKA_SASL_MECHANISM=PLAIN
+KAFKA_USERNAME=<usuario-kafka>
+KAFKA_PASSWORD=<senha-kafka>
+KAFKA_SSL_TRUSTSTORE_TYPE=PEM
+KAFKA_SSL_TRUSTSTORE_LOCATION=ca.pem
+PORT=8080
 ```
 
-Blank saved route ids return HTTP 400. Unknown saved route ids return HTTP 404 with `Saved route suggestion not found: {savedRouteId}`.
+## 5. Responsavel pelo servico
 
-### Collection Search
+**Responsavel:** Lidia Galdino / Equipe Cyco
 
-**Search Collection Requests**
-```
-GET /api/collections/search
-GET /api/collections/search?status=IN_PROGRESS
-GET /api/collections/search?collectorId=coll-001
-GET /api/collections/search?generatorId=gen-001
-GET /api/collections/search?status=IN_PROGRESS&collectorId=coll-001&generatorId=gen-001
+O responsavel pelo servico deve manter os contratos da API, a configuracao de infraestrutura, os topicos Kafka, as regras de negocio de coleta e a documentacao operacional atualizados.
 
-Response: 200 OK
-[
-  {
-    "id": "req-001",
-    "generatorId": "gen-001",
-    "addressId": "addr-001",
-    "address": {
-      "id": "addr-001",
-      "street": "Main St",
-      "number": "100",
-      "city": "Sao Paulo",
-      "state": "SP",
-      "zipCode": "01000-000",
-      "latitude": -23.5505,
-      "longitude": -46.6333,
-      "enrichmentStatus": "ENRICHED",
-      "enrichmentSource": "nominatim"
-    },
-    "materialIds": ["mat-001", "mat-002"],
-    "weight": 100.0,
-    "status": "IN_PROGRESS",
-    "selectedCollectorId": "coll-001",
-    "generatorConfirmed": false,
-    "collectorConfirmed": false,
-    "createdAt": "2026-05-09T16:00:00",
-    "updatedAt": "2026-05-09T16:10:00"
-  }
-]
-```
+## 6. Procedimentos basicos de operacao
 
-The `status`, `collectorId`, and `generatorId` query parameters are optional. Supported status values are `PENDING`, `IN_PROGRESS`, `COMPLETED`, `REJECTED`, and `CANCELLED`. When multiple filters are provided, all must match. Results are always ordered by `createdAt` descending, so the newest collection requests appear first. Invalid status values return HTTP 400. Missing collection addresses return HTTP 404 with `Collection address not found: {addressId}`.
+### Executar localmente
 
-**Get Collection Request by ID**
-```
-GET /api/collections/{id}
+Pre-requisitos:
 
-Response: 200 OK
-{
-  "id": "req-001",
-  "generatorId": "gen-001",
-  "addressId": "addr-001",
-  "address": {
-    "id": "addr-001",
-    "street": "Main St",
-    "number": "100",
-    "city": "Sao Paulo",
-    "state": "SP",
-    "zipCode": "01000-000",
-    "latitude": -23.5505,
-    "longitude": -46.6333,
-    "enrichmentStatus": "ENRICHED",
-    "enrichmentSource": "nominatim"
-  },
-  "materialIds": ["mat-001", "mat-002"],
-  "weight": 100.0,
-  "status": "IN_PROGRESS",
-  "selectedCollectorId": "coll-001",
-  "generatorConfirmed": false,
-  "collectorConfirmed": false,
-  "createdAt": "2026-05-09T16:00:00",
-  "updatedAt": "2026-05-09T16:10:00"
-}
-```
+- Java 21.
+- Maven ou Maven Wrapper.
+- MongoDB acessivel.
+- Kafka acessivel.
+- Arquivo `ca.pem`, quando o broker Kafka exigir conexao `SASL_SSL` com certificado.
 
-Blank ids return HTTP 400. Existing but unknown ids return HTTP 404 with `Collection request not found: {id}`. Missing collection addresses return HTTP 404 with `Collection address not found: {addressId}`.
-
-### Completion Endpoints
-
-**Confirm by Generator**
-```
-POST /api/requests/{requestId}/confirm-generator
-
-Response: 200 OK
-```
-
-**Confirm by Collector**
-```
-POST /api/requests/{requestId}/confirm-collector
-
-Response: 200 OK
-```
-
-## State Transitions
-
-```
-PENDING
-  ├─→ [Collector selects] → PENDING (selected)
-  ├─→ [Collector accepts] → IN_PROGRESS
-  │     ├─→ [Generator confirms] → IN_PROGRESS (gen_confirmed)
-  │     ├─→ [Collector confirms] → IN_PROGRESS (coll_confirmed)
-  │     └─→ [Both confirm] → COMPLETED
-  └─→ [Collector rejects] → PENDING (reset selection)
-```
-
-## Kafka Topics & Events
-
-### Consumer Topics (Sync from User Service)
-- `sync-materials` - Material data synchronization
-- `addresses-sync` - Address data synchronization
-- `collector-sync` - Collector data synchronization
-
-### Producer Topics (Collection Events)
-- `collection-events` - Published events:
-  - `COLLECTOR_SELECTED`
-  - `COLLECTION_ACCEPTED`
-  - `COLLECTION_REJECTED`
-  - `COLLECTION_COMPLETED`
-
-## MongoDB Collections
-
-- `collection_requests` - Collection request documents
-- `collectors` - Collector data synced from user service
-- `materials` - Material data synced from user service
-- `addresses` - Address data synced from user service with enrichment metadata
-- `address_cache` - Cache for geocoded addresses with TTL expiration
-
-## Address Enrichment Flow
-
-The service automatically enriches address data via multiple external services:
-
-### Enrichment Process
-
-```
-SyncAddressEvent / SyncCollectorEvent.address → AddressEnrichmentAdapter
-  │
-  ├─ Step 1: Check if coordinates already provided
-  │   └─ YES → Return address as PROVIDED
-  │
-  ├─ Step 2: Generate ID
-  │   └─ ID = SHA-256(cep+street+number+city) if CEP present, else UUID
-  │
-  ├─ Step 3: Check for duplicate addresses
-  │   └─ Query by (zipCode, street, number, city, state)
-  │   └─ If found → Reuse ID, skip enrichment
-  │
-  ├─ Step 4: ViaCEP enrichment (if enabled)
-  │   ├─ Lookup postal code → Extract city, state, street
-  │   └─ Enrich missing fields
-  │
-  ├─ Step 5: Check address cache
-  │   └─ Query cache by (cep+number+street+city)
-  │   └─ If found → Use cached coordinates
-  │
-  ├─ Step 6: Nominatim geocoding
-  │   ├─ Build query from enriched address
-  │   └─ Lookup coordinates (latitude, longitude)
-  │
-  ├─ Step 7: Cache result
-  │   ├─ Store in address_cache collection
-  │   ├─ Add source metadata (viacep/nominatim/cache)
-  │   └─ Set TTL for automatic expiration
-  │
-  └─ Step 8: Set enrichment status
-      ├─ ENRICHED → Coordinates found
-      ├─ ADDRESS_UNVERIFIED → No coordinates found
-      ├─ PROVIDED → Coordinates in input
-      └─ FAILED → Enrichment error
-```
-
-### Address Entity Fields
-
-```java
-public class Address {
-    // Existing fields
-    private String id;              // Generated or provided address ID
-    private String street;          // Street name
-    private String city;            // City name
-    private String zipCode;         // Postal code (CEP in Brazil)
-    private Double latitude;        // Geocoded latitude
-    private Double longitude;       // Geocoded longitude
-    
-    // New enrichment fields
-    private String number;          // Street number (enriched)
-    private String state;           // State/province (from ViaCEP)
-    private String enrichmentStatus; // PENDING, ENRICHED, ADDRESS_UNVERIFIED, PROVIDED, FAILED, SKIPPED
-    private String enrichmentSource; // viacep, nominatim, cache, provided
-}
-```
-
-### Configuration
-
-```properties
-# Enable/disable enrichment processing
-enrichment.enabled=true
-
-# ViaCEP configuration (Brazilian postal code service)
-viacep.enabled=true
-viacep.endpoint=https://viacep.com.br/ws
-
-# Nominatim configuration (OpenStreetMap geocoding)
-nominatim.endpoint=https://nominatim.openstreetmap.org
-
-# Cache and timeout settings
-enrichment.cache.ttl=86400                    # 24 hours
-enrichment.timeout.ms=5000                   # 5 seconds
-enrichment.user-agent=collections-service/1.0
-```
-
-### Service Integrations
-
-1. **ViaCEP** (https://viacep.com.br/)
-   - Enriches CEP with street, city, state
-   - Brazilian postal code service
-   - No rate limiting for integration use
-
-2. **Nominatim** (https://nominatim.openstreetmap.org/)
-   - Geocodes addresses to coordinates
-   - OpenStreetMap reverse geocoding
-   - Respects rate limits (1 request/sec, user-agent required)
-
-### MongoDB Indexes
-
-Run `db-migration.js` to create required indexes:
-
-```javascript
-// Unique compound index for duplicate detection
-db.addresses.createIndex({
-    zipCode: 1, street: 1, number: 1, city: 1, state: 1
-}, { unique: true, sparse: true });
-
-// TTL index for cache expiration
-db.address_cache.createIndex(
-    { createdAt: 1 },
-    { expireAfterSeconds: 86400 }
-);
-
-// Collection search newest-first ordering
-db.collection_requests.createIndex({
-    createdAt: -1
-});
-
-// Collection search status filter plus newest-first ordering
-db.collection_requests.createIndex({
-    status: 1,
-    createdAt: -1
-});
-
-// Collection search collector filter plus newest-first ordering
-db.collection_requests.createIndex({
-    selectedCollectorId: 1,
-    createdAt: -1
-});
-
-// Collection search generator filter plus newest-first ordering
-db.collection_requests.createIndex({
-    generatorId: 1,
-    createdAt: -1
-});
-
-// Saved route duplicate blocking
-db.saved_routes.createIndex({
-    fingerprint: 1
-}, { unique: true });
-
-// Saved routes newest-first listing
-db.saved_routes.createIndex({
-    createdAt: -1
-});
-
-// Saved route closure lookup by assigned request
-db.saved_routes.createIndex({
-    status: 1,
-    assignedCollectionRequestIds: 1
-});
-
-// Saved routes by collector newest-first
-db.saved_routes.createIndex({
-    collectorId: 1,
-    createdAt: -1
-});
-```
-
-### Kafka Topics & Events
-
-#### Consumer Topics (Sync from User Service)
-- `addresses-sync` - **Enriched** with coordinates and enrichment metadata
-- `collector-sync` - **Enriched** through the same address flow; collector records store the returned address ID/reference
-
-#### Error Handling
-- Enrichment failures are logged but address is persisted
-- Fallback to Nominatim if ViaCEP fails
-- Graceful degradation: returns address without coordinates if all enrichment fails
-- Circuit breaker for external service timeouts
-
-## MongoDB Collections
-
-- `collection_requests` - Collection request documents
-- `collectors` - Collector data synced from user service
-- `materials` - Material data synced from user service
-- `addresses` - Address data synced from user service with enrichment metadata
-- `address_cache` - Cache for geocoded addresses with TTL expiration
-
-## Getting Started
-
-### Prerequisites
-- Java 21+
-- Docker & Docker Compose
-- Maven 3.9+
-
-### Start Infrastructure
+Passos:
 
 ```bash
-docker-compose up
+./mvnw quarkus:dev
 ```
 
-This starts:
-- MongoDB on port 27017
-- Kafka on port 9092
-- Zookeeper on port 2181
-
-### Build Project
-
-```bash
-mvn clean install
-```
-
-### Run Application
+Ou, caso esteja usando Maven instalado localmente:
 
 ```bash
 mvn quarkus:dev
 ```
 
-Application runs on http://localhost:8080
+O servico sobe por padrao na porta `8080`, respeitando a variavel `PORT` quando definida.
 
-### Run Tests
+### Executar com Docker
 
 ```bash
-mvn test
+docker build -t cyco-collections .
+docker run --env-file .env -p 8080:8080 cyco-collections
 ```
 
-## Configuration
+### Gerar artefato executavel
 
-See `application.properties` for:
-- MongoDB connection string
-- Kafka bootstrap servers
-- Topic configurations
-- Logging levels
-
-## Reactive Patterns
-
-All operations use **Mutiny Uni/Multi** for non-blocking, reactive streams:
-
-```
-// Example: Create request reactively
-Uni<CollectionRequest> request = collectionRequestUseCase.createRequest(/* params */);
-request.subscribe().withSubscriber(/* subscriber */);
+```bash
+./mvnw clean package -DskipTests -Dquarkus.package.type=uber-jar
+java -jar target/*-runner.jar
 ```
 
-## Key Features
+### Verificar logs
 
-✅ Clean/Hexagonal Architecture
-✅ Reactive with Mutiny (Uni/Multi)
-✅ Event-driven state management
-✅ MongoDB persistence
-✅ Kafka integration for sync & events
-✅ Comprehensive error handling
-✅ Unit & Integration tests
-✅ Docker compose ready
+Ambiente local:
 
-## Compliance
+```bash
+./mvnw quarkus:dev
+```
 
-All acceptance criteria from spec.md validated:
-- AC1: Collection Request Creation ✓
-- AC2: Collector Discovery ✓
-- AC3: Collector Selection & Notification ✓
-- AC4: Request State Transitions ✓
-- AC5: Data Synchronization ✓
-- AC6: Reactive Patterns ✓
-- AC7: Event-Driven Communication ✓
+Os logs aparecem no terminal onde o servico foi iniciado.
 
-## Next Steps
+Google Cloud Run:
 
-1. Configure external User Service Kafka events
-2. Add database indices for performance
-3. Implement distributed tracing (Jaeger)
-4. Add metrics collection (Micrometer)
-5. Deploy to Kubernetes with Operators
+```bash
+gcloud run services logs read cyco-collections --region southamerica-east1
+```
+
+### Endpoint de health check
+
+O codigo atual nao possui a extensao `quarkus-smallrye-health` configurada no `pom.xml`. Por isso, nao ha um endpoint de health check ativo no servico neste momento.
+
+Recomendacao operacional:
+
+- Adicionar a extensao `quarkus-smallrye-health`.
+- Usar o endpoint padrao `/q/health` apos a configuracao.
+- Enquanto isso, validar disponibilidade por logs, status do container e chamadas de API conhecidas.
+
+### Reiniciar o servico
+
+Ambiente local:
+
+1. Encerrar o processo com `Ctrl+C`.
+2. Iniciar novamente com `./mvnw quarkus:dev`.
+
+Google Cloud Run:
+
+```bash
+gcloud run deploy cyco-collections \
+  --image <imagem-do-container> \
+  --region southamerica-east1 \
+  --platform managed
+```
+
+## 7. Regras de negocio
+
+- Uma solicitacao de coleta deve possuir `generatorId`, `addressId`, pelo menos um material e peso maior que zero.
+- Uma nova solicitacao inicia com status `PENDING`.
+- Um coletor pode ser selecionado para uma solicitacao pendente quando for elegivel para os materiais e localizacao da coleta.
+- Quando o coletor aceita a solicitacao, a coleta passa para `IN_PROGRESS`.
+- O gerador e o coletor podem cancelar a coleta enquanto ela ainda nao estiver finalizada.
+- O cancelamento deve validar se o usuario informado e o gerador ou coletor associado a solicitacao.
+- A conclusao da coleta depende da confirmacao do gerador e do coletor.
+- A coleta so deve ser considerada concluida quando as confirmacoes obrigatorias forem registradas.
+- A pesquisa de coletas deve permitir filtro por `status`, `collectorId` e `generatorId`.
+- A pesquisa de coletas deve retornar os registros em ordem decrescente de data de criacao, ou seja, os mais recentes primeiro.
+- A sugestao de rota so pode considerar coletas com status `IN_PROGRESS`.
+- Coletas que nao estao em andamento devem ser retornadas como nao alocadas com motivo `NOT_IN_PROGRESS`.
+- A requisicao de sugestao de rota deve informar explicitamente cada veiculo e sua capacidade, pois veiculos diferentes podem suportar pesos diferentes.
+- A capacidade de cada veiculo deve ser maior que zero.
+- O otimizador pode descartar paradas quando `allowDroppingStops` estiver habilitado, aplicando o custo configurado em `dropPenalty`.
+- Ao salvar uma rota, o servico deve bloquear sugestoes duplicadas.
+- Uma rota salva deve ser fechada quando todas as coletas associadas estiverem concluidas.
+- Ao mover uma coleta entre veiculos de uma rota salva, o sistema deve recalcular automaticamente a melhor posicao da parada no veiculo de destino.
+
+## 8. Eventos publicados ou consumidos
+
+### Eventos publicados
+
+| Topico | Evento | Descricao |
+| --- | --- | --- |
+| `collection-events` | `COLLECTOR_SELECTED` | Publicado quando um coletor e selecionado para uma solicitacao. |
+| `collection-events` | `COLLECTION_ACCEPTED` | Publicado quando o coletor aceita uma solicitacao. |
+| `collection-events` | `COLLECTION_REJECTED` | Publicado quando o coletor rejeita uma solicitacao. |
+| `collection-events` | `COLLECTION_COMPLETED` | Publicado quando a coleta e concluida. |
+
+### Eventos consumidos
+
+| Topico | Evento/Dado | Descricao |
+| --- | --- | --- |
+| `addresses-sync` | `SyncAddressEvent` | Sincroniza dados de endereco e executa enriquecimento quando necessario. |
+| `collector-sync` | `SyncCollectorEvent` | Cria ou atualiza o snapshot de um coletor no servico de coletas. |
+| `collector-update` | `SyncCollectorEvent` | Atualiza dados de um coletor existente usando o mesmo formato do evento de criacao. |
+
+## 9. Metricas monitoradas
+
+Metricas recomendadas para operacao do microsservico:
+
+- Quantidade de requisicoes por endpoint.
+- Taxa de respostas `2xx`, `4xx` e `5xx`.
+- Latencia media, p95 e p99 dos endpoints REST.
+- Tempo de resposta do MongoDB.
+- Erros de leitura e escrita no MongoDB.
+- Lag dos consumidores Kafka.
+- Falhas de publicacao no topico `collection-events`.
+- Quantidade de eventos consumidos por topico.
+- Taxa de sucesso e falha no enriquecimento de enderecos.
+- Tempo gasto para gerar sugestoes de rota.
+- Quantidade de coletas nao alocadas em sugestoes de rota.
+- Uso de CPU e memoria do container.
+- Numero de reinicios do container em ambiente de deploy.
+
+## 10. ADR relacionado
+
+### ADR-001: Arquitetura hexagonal com Quarkus
+
+O servico utiliza uma organizacao baseada em camadas de dominio, aplicacao, infraestrutura e apresentacao. Essa decisao isola regras de negocio de detalhes externos como MongoDB, Kafka e APIs REST.
+
+### ADR-002: Sincronizacao por eventos Kafka
+
+Dados de coletores e enderecos sao mantidos localmente por meio de eventos Kafka. Essa abordagem reduz acoplamento direto com outros microsservicos e permite que o servico de coletas opere com snapshots locais.
+
+### ADR-003: Otimizacao de rotas com OR-Tools e fallback
+
+A sugestao de rotas usa Google OR-Tools quando a biblioteca nativa esta disponivel. Caso ocorra falha de carregamento nativo no ambiente, o servico usa uma estrategia interna de fallback para evitar indisponibilidade do endpoint.
 

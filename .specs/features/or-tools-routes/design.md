@@ -33,9 +33,10 @@ Request shape:
 ```json
 {
   "collectorId": "collector-123",
-  "vehicleCount": 2,
-  "vehicleCapacity": 100.0,
-  "vehicleCapacities": [100.0, 80.0],
+  "vehicles": [
+    { "capacity": 100.0 },
+    { "capacity": 80.0 }
+  ],
   "start": {
     "type": "COORDINATES",
     "addressId": null,
@@ -61,9 +62,9 @@ Request shape:
 Validation rules:
 
 - `collectorId` is required.
-- `vehicleCount` must be greater than zero.
-- Either `vehicleCapacity` or `vehicleCapacities` is required.
-- If `vehicleCapacities` is present, its size must equal `vehicleCount`.
+- `vehicles` is required and must contain at least one vehicle.
+- Each `vehicles[]` entry must provide its own `capacity` because vehicle weight limits can differ.
+- Vehicle indexes are assigned from the order of the `vehicles` array.
 - Every capacity must be greater than zero.
 - `start` must resolve to valid coordinates.
 - `timeLimitSeconds` defaults to a small bounded value and cannot exceed the configured maximum.

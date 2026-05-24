@@ -22,6 +22,14 @@ public final class SavedRouteModels {
     ) {
     }
 
+    public record MoveRouteRequestCommand(
+            String savedRouteId,
+            String collectionRequestId,
+            Integer sourceVehicleIndex,
+            Integer targetVehicleIndex
+    ) {
+    }
+
     public record SavedRouteSuggestion(
             String id,
             String collectorId,
@@ -67,6 +75,25 @@ public final class SavedRouteModels {
                     suggestion,
                     createdAt,
                     closedAt,
+                    closedAt
+            );
+        }
+
+        public SavedRouteSuggestion updateRoute(
+                String fingerprint,
+                List<String> assignedCollectionRequestIds,
+                RouteOptimizationResult suggestion,
+                LocalDateTime updatedAt
+        ) {
+            return new SavedRouteSuggestion(
+                    id,
+                    collectorId,
+                    status,
+                    fingerprint,
+                    List.copyOf(assignedCollectionRequestIds),
+                    suggestion,
+                    createdAt,
+                    updatedAt,
                     closedAt
             );
         }

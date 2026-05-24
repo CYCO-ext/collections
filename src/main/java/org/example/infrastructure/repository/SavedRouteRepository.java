@@ -44,9 +44,26 @@ public class SavedRouteRepository {
                 .replaceWithVoid();
     }
 
+    public Uni<SavedRouteSuggestion> findById(String savedRouteId) {
+        return getCollection()
+                .find(Filters.eq("_id", savedRouteId))
+                .collect().first()
+                .onItem().ifNotNull().transform(this::fromDocument);
+    }
+
     public Uni<SavedRouteSuggestion> findByFingerprint(String fingerprint) {
         return getCollection()
                 .find(Filters.eq("fingerprint", fingerprint))
+                .collect().first()
+                .onItem().ifNotNull().transform(this::fromDocument);
+    }
+
+    public Uni<SavedRouteSuggestion> findByFingerprintExcludingId(String fingerprint, String excludedSavedRouteId) {
+        return getCollection()
+                .find(Filters.and(
+                        Filters.eq("fingerprint", fingerprint),
+                        Filters.ne("_id", excludedSavedRouteId)
+                ))
                 .collect().first()
                 .onItem().ifNotNull().transform(this::fromDocument);
     }
@@ -66,6 +83,12 @@ public class SavedRouteRepository {
                 ))
                 .collect().asList()
                 .onItem().transform(docs -> docs.stream().map(this::fromDocument).toList());
+    }
+
+    public Uni<Void> update(SavedRouteSuggestion route) {
+        return getCollection()
+                .replaceOne(Filters.eq("_id", route.id()), toDocument(route))
+                .replaceWithVoid();
     }
 
     public Uni<Void> close(String savedRouteId, LocalDateTime closedAt) {

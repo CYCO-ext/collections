@@ -5,26 +5,15 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.example.application.port.out.CollectionRequestPort;
 import org.example.application.port.out.SavedRoutePort;
-import org.example.application.route.RouteModels.RouteOptimizationResult;
-import org.example.application.route.RouteModels.RoutePlan;
-import org.example.application.route.RouteModels.RouteStop;
 import org.example.application.route.SavedRouteModels.SaveRouteSuggestionCommand;
 import org.example.application.route.SavedRouteModels.SavedRouteResult;
 import org.example.application.route.SavedRouteModels.SavedRouteStatus;
 import org.example.application.route.SavedRouteModels.SavedRouteSuggestion;
 import org.example.domain.entity.CollectionRequest;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HexFormat;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -37,15 +26,18 @@ public class SaveRouteSuggestionUseCase {
     @Inject
     SavedRoutePort savedRoutePort;
 
+    @Inject
+    SavedRouteFingerprintService fingerprintService;
+
     public Uni<SavedRouteResult> save(SaveRouteSuggestionCommand command) {
         validate(command);
-        List<RouteStopRef> stopRefs = assignedStopRefs(command.suggestion());
+        List<SavedRouteFingerprintService.RouteStopRef> stopRefs = fingerprintService.assignedStopRefs(command.suggestion());
         if (stopRefs.isEmpty()) {
             throw new IllegalArgumentException("route suggestion must contain at least one assigned stop");
         }
-        List<String> assignedIds = distinctAssignedIds(stopRefs);
+        List<String> assignedIds = fingerprintService.distinctAssignedIds(stopRefs);
         String collectorId = command.collectorId().trim();
-        String fingerprint = fingerprint(collectorId, stopRefs);
+        String fingerprint = fingerprintService.fingerprint(collectorId, stopRefs);
 
         return savedRoutePort.findByFingerprint(fingerprint)
                 .flatMap(existing -> {
@@ -104,45 +96,5 @@ public class SaveRouteSuggestionUseCase {
         if (command.suggestion().routes() == null || command.suggestion().routes().isEmpty()) {
             throw new IllegalArgumentException("route suggestion must contain at least one route");
         }
-    }
-
-    private List<RouteStopRef> assignedStopRefs(RouteOptimizationResult suggestion) {
-        List<RouteStopRef> refs = new ArrayList<>();
-        for (RoutePlan route : suggestion.routes()) {
-            if (route.stops() == null) {
-                continue;
-            }
-            for (RouteStop stop : route.stops()) {
-                if (stop.collectionRequestId() == null || stop.collectionRequestId().isBlank()) {
-                    throw new IllegalArgumentException("route stop collectionRequestId is required");
-                }
-                refs.add(new RouteStopRef(route.vehicleIndex(), stop.sequence(), stop.collectionRequestId().trim()));
-            }
-        }
-        refs.sort(Comparator.comparingInt(RouteStopRef::vehicleIndex).thenComparingInt(RouteStopRef::sequence));
-        return refs;
-    }
-
-    private List<String> distinctAssignedIds(List<RouteStopRef> stopRefs) {
-        Set<String> ids = new LinkedHashSet<>();
-        for (RouteStopRef stopRef : stopRefs) {
-            ids.add(stopRef.collectionRequestId());
-        }
-        return List.copyOf(ids);
-    }
-
-    private String fingerprint(String collectorId, List<RouteStopRef> stopRefs) {
-        String input = collectorId + "|" + stopRefs.stream()
-                .map(ref -> ref.vehicleIndex() + ":" + ref.sequence() + ":" + ref.collectionRequestId())
-                .collect(Collectors.joining("|"));
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(input.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is not available", ex);
-        }
-    }
-
-    private record RouteStopRef(int vehicleIndex, int sequence, String collectionRequestId) {
     }
 }

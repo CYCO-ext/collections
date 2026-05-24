@@ -60,18 +60,14 @@ public class RouteOptimizationUseCase {
         if (isBlank(command.collectorId())) {
             throw new IllegalArgumentException("collectorId is required");
         }
-        if (command.vehicleCount() <= 0) {
-            throw new IllegalArgumentException("vehicleCount must be greater than zero");
+        if (command.vehicles() == null || command.vehicles().isEmpty()) {
+            throw new IllegalArgumentException("vehicles are required");
         }
-        if ((command.vehicleCapacities() == null || command.vehicleCapacities().isEmpty()) && command.vehicleCapacity() == null) {
-            throw new IllegalArgumentException("vehicleCapacity or vehicleCapacities is required");
-        }
-        if (command.vehicleCapacities() != null && !command.vehicleCapacities().isEmpty()
-                && command.vehicleCapacities().size() != command.vehicleCount()) {
-            throw new IllegalArgumentException("vehicleCapacities size must match vehicleCount");
-        }
-        for (Double capacity : vehicleCapacities(command)) {
-            if (capacity == null || capacity <= 0) {
+        for (RouteVehicle vehicle : command.vehicles()) {
+            if (vehicle == null) {
+                throw new IllegalArgumentException("vehicles cannot contain null entries");
+            }
+            if (vehicle.capacity() <= 0) {
                 throw new IllegalArgumentException("vehicle capacities must be greater than zero");
             }
         }
@@ -167,7 +163,7 @@ public class RouteOptimizationUseCase {
     ) {
         List<RouteCandidateStop> routable = new ArrayList<>();
         List<UnassignedRouteStop> unassigned = new ArrayList<>();
-        double maxCapacity = vehicleCapacities(command).stream().filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(0.0);
+        double maxCapacity = command.vehicles().stream().map(RouteVehicle::capacity).max(Comparator.naturalOrder()).orElse(0.0);
 
         for (int index = 0; index < requests.size(); index++) {
             CollectionRequest request = requests.get(index);
@@ -245,23 +241,7 @@ public class RouteOptimizationUseCase {
     }
 
     private List<RouteVehicle> vehicles(RouteOptimizationCommand command) {
-        List<Double> capacities = vehicleCapacities(command);
-        List<RouteVehicle> vehicles = new ArrayList<>();
-        for (int index = 0; index < command.vehicleCount(); index++) {
-            vehicles.add(new RouteVehicle(index, capacities.get(index)));
-        }
-        return vehicles;
-    }
-
-    private List<Double> vehicleCapacities(RouteOptimizationCommand command) {
-        if (command.vehicleCapacities() != null && !command.vehicleCapacities().isEmpty()) {
-            return command.vehicleCapacities();
-        }
-        List<Double> capacities = new ArrayList<>();
-        for (int index = 0; index < command.vehicleCount(); index++) {
-            capacities.add(command.vehicleCapacity());
-        }
-        return capacities;
+        return command.vehicles();
     }
 
     private int boundedTimeLimit(RouteOptions options) {

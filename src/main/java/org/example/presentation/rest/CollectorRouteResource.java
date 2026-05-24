@@ -2,23 +2,13 @@ package org.example.presentation.rest;
 
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.DELETE;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.example.application.route.RouteModels.*;
+import org.example.application.route.SavedRouteModels.MoveRouteRequestCommand;
 import org.example.application.route.SavedRouteModels.SaveRouteSuggestionCommand;
-import org.example.application.usecase.DeleteSavedRouteSuggestionUseCase;
-import org.example.application.usecase.DuplicateSavedRouteException;
-import org.example.application.usecase.ListSavedRoutesUseCase;
-import org.example.application.usecase.SavedRouteSuggestionNotFoundException;
-import org.example.application.usecase.RouteOptimizationUseCase;
-import org.example.application.usecase.SaveRouteSuggestionUseCase;
+import org.example.application.usecase.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,6 +31,9 @@ public class CollectorRouteResource {
 
     @Inject
     DeleteSavedRouteSuggestionUseCase deleteSavedRouteSuggestionUseCase;
+
+    @Inject
+    MoveRouteRequestUseCase moveRouteRequestUseCase;
 
     @POST
     @Path("/suggest")
@@ -94,6 +87,30 @@ public class CollectorRouteResource {
                 });
     }
 
+    @POST
+    @Path("/saved/{savedRouteId}/move-request")
+    public Uni<Response> moveRouteRequest(@PathParam("savedRouteId") String savedRouteId, MoveRouteRequestDTO dto) {
+        LOG.info("POST /collectors/routes/saved/{}/move-request", savedRouteId);
+        MoveRouteRequestCommand command;
+        try {
+            command = toMoveCommand(savedRouteId, dto);
+        } catch (RuntimeException ex) {
+            return Uni.createFrom().item(Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build());
+        }
+        return moveRouteRequestUseCase.move(command)
+                .onItem().transform(result -> Response.ok(result).build())
+                .onFailure(SavedRouteSuggestionNotFoundException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.NOT_FOUND).entity(ex.getMessage()).build())
+                .onFailure(RouteMoveValidationException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build())
+                .onFailure(DuplicateSavedRouteException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.CONFLICT).entity(ex.getMessage()).build())
+                .onFailure().recoverWithItem(ex -> {
+                    LOG.error("Error moving route request", ex);
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
+                });
+    }
+
     @DELETE
     @Path("/saved/{savedRouteId}")
     public Uni<Response> deleteSavedRoute(@PathParam("savedRouteId") String savedRouteId) {
@@ -117,15 +134,25 @@ public class CollectorRouteResource {
         return new SaveRouteSuggestionCommand(dto.getCollectorId(), dto.getSource(), dto.getSuggestion());
     }
 
+    private MoveRouteRequestCommand toMoveCommand(String savedRouteId, MoveRouteRequestDTO dto) {
+        if (dto == null) {
+            throw new RouteMoveValidationException("move route request is required");
+        }
+        return new MoveRouteRequestCommand(
+                savedRouteId,
+                dto.getCollectionRequestId(),
+                dto.getSourceVehicleIndex(),
+                dto.getTargetVehicleIndex()
+        );
+    }
+
     private RouteOptimizationCommand toCommand(RouteOptimizationRequestDTO dto) {
         if (dto == null) {
             throw new IllegalArgumentException("Route optimization request is required");
         }
         return new RouteOptimizationCommand(
                 dto.getCollectorId(),
-                dto.getVehicleCount(),
-                dto.getVehicleCapacity(),
-                dto.getVehicleCapacities(),
+                toVehicles(dto.getVehicles()),
                 toStartLocation(dto.getStart()),
                 dto.getEndAtStart() == null || dto.getEndAtStart(),
                 dto.getCandidateRequestIds(),
@@ -140,6 +167,21 @@ public class CollectorRouteResource {
                         dto.getOptions().getDropPenalty()
                 )
         );
+    }
+
+    private List<RouteVehicle> toVehicles(List<RouteVehicleDTO> vehicles) {
+        if (vehicles == null) {
+            return null;
+        }
+        return java.util.stream.IntStream.range(0, vehicles.size())
+                .mapToObj(index -> {
+                    RouteVehicleDTO vehicle = vehicles.get(index);
+                    if (vehicle == null || vehicle.getCapacity() == null) {
+                        throw new IllegalArgumentException("vehicle capacity is required");
+                    }
+                    return new RouteVehicle(index, vehicle.getCapacity());
+                })
+                .toList();
     }
 
     private StartLocation toStartLocation(StartLocationDTO dto) {
@@ -180,11 +222,51 @@ public class CollectorRouteResource {
         }
     }
 
+    public static class MoveRouteRequestDTO {
+        private String collectionRequestId;
+        private Integer sourceVehicleIndex;
+        private Integer targetVehicleIndex;
+
+        public String getCollectionRequestId() {
+            return collectionRequestId;
+        }
+
+        public void setCollectionRequestId(String collectionRequestId) {
+            this.collectionRequestId = collectionRequestId;
+        }
+
+        public Integer getSourceVehicleIndex() {
+            return sourceVehicleIndex;
+        }
+
+        public void setSourceVehicleIndex(Integer sourceVehicleIndex) {
+            this.sourceVehicleIndex = sourceVehicleIndex;
+        }
+
+        public Integer getTargetVehicleIndex() {
+            return targetVehicleIndex;
+        }
+
+        public void setTargetVehicleIndex(Integer targetVehicleIndex) {
+            this.targetVehicleIndex = targetVehicleIndex;
+        }
+    }
+
+    public static class RouteVehicleDTO {
+        private Double capacity;
+
+        public Double getCapacity() {
+            return capacity;
+        }
+
+        public void setCapacity(Double capacity) {
+            this.capacity = capacity;
+        }
+    }
+
     public static class RouteOptimizationRequestDTO {
         private String collectorId;
-        private int vehicleCount;
-        private Double vehicleCapacity;
-        private List<Double> vehicleCapacities;
+        private List<RouteVehicleDTO> vehicles;
         private StartLocationDTO start;
         private Boolean endAtStart;
         private List<String> candidateRequestIds;
@@ -199,28 +281,12 @@ public class CollectorRouteResource {
             this.collectorId = collectorId;
         }
 
-        public int getVehicleCount() {
-            return vehicleCount;
+        public List<RouteVehicleDTO> getVehicles() {
+            return vehicles;
         }
 
-        public void setVehicleCount(int vehicleCount) {
-            this.vehicleCount = vehicleCount;
-        }
-
-        public Double getVehicleCapacity() {
-            return vehicleCapacity;
-        }
-
-        public void setVehicleCapacity(Double vehicleCapacity) {
-            this.vehicleCapacity = vehicleCapacity;
-        }
-
-        public List<Double> getVehicleCapacities() {
-            return vehicleCapacities;
-        }
-
-        public void setVehicleCapacities(List<Double> vehicleCapacities) {
-            this.vehicleCapacities = vehicleCapacities;
+        public void setVehicles(List<RouteVehicleDTO> vehicles) {
+            this.vehicles = vehicles;
         }
 
         public StartLocationDTO getStart() {

@@ -1,6 +1,7 @@
 # Build stage
 FROM maven:3.9-eclipse-temurin-21 AS builder
 WORKDIR /workspace
+
 COPY pom.xml .
 COPY src/ src/
 RUN mvn clean package -DskipTests -Dquarkus.package.type=uber-jar
@@ -8,8 +9,10 @@ RUN mvn clean package -DskipTests -Dquarkus.package.type=uber-jar
 # Runtime stage
 FROM eclipse-temurin:21-jdk
 WORKDIR /app
+
 COPY --from=builder /workspace/target/*-runner.jar application.jar
+COPY ca.pem /app/ca.pem
 
 EXPOSE 8080
-CMD ["java", "-jar", "application.jar"]
 
+CMD ["java", "-jar", "application.jar"]

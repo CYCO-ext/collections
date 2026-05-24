@@ -22,8 +22,18 @@ public class SavedRouteAdapter implements SavedRoutePort {
     }
 
     @Override
+    public Uni<SavedRouteSuggestion> findById(String savedRouteId) {
+        return repository.findById(savedRouteId);
+    }
+
+    @Override
     public Uni<SavedRouteSuggestion> findByFingerprint(String fingerprint) {
         return repository.findByFingerprint(fingerprint);
+    }
+
+    @Override
+    public Uni<SavedRouteSuggestion> findByFingerprintExcludingId(String fingerprint, String excludedSavedRouteId) {
+        return repository.findByFingerprintExcludingId(fingerprint, excludedSavedRouteId);
     }
 
     @Override
@@ -34,6 +44,11 @@ public class SavedRouteAdapter implements SavedRoutePort {
     @Override
     public Uni<List<SavedRouteSuggestion>> findOpenContainingCollectionRequest(String collectionRequestId) {
         return repository.findOpenContainingCollectionRequest(collectionRequestId);
+    }
+
+    @Override
+    public Uni<Void> update(SavedRouteSuggestion route) {
+        return repository.update(route);
     }
 
     @Override

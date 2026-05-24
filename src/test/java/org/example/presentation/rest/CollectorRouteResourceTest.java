@@ -1,19 +1,10 @@
 package org.example.presentation.rest;
 
 import jakarta.ws.rs.core.Response;
-import org.example.application.route.RouteModels.RouteOptimizationResult;
-import org.example.application.route.RouteModels.RoutePlan;
-import org.example.application.route.RouteModels.RouteStop;
-import org.example.application.route.RouteModels.SolverMetadata;
-import org.example.application.route.RouteModels.SolverStatus;
+import org.example.application.route.RouteModels.*;
 import org.example.application.route.SavedRouteModels.SavedRouteResult;
 import org.example.application.route.SavedRouteModels.SavedRouteStatus;
-import org.example.application.usecase.DeleteSavedRouteSuggestionUseCase;
-import org.example.application.usecase.DuplicateSavedRouteException;
-import org.example.application.usecase.ListSavedRoutesUseCase;
-import org.example.application.usecase.SavedRouteSuggestionNotFoundException;
-import org.example.application.usecase.RouteOptimizationUseCase;
-import org.example.application.usecase.SaveRouteSuggestionUseCase;
+import org.example.application.usecase.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -22,9 +13,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class CollectorRouteResourceTest {
     private CollectorRouteResource resource;
@@ -32,6 +21,7 @@ class CollectorRouteResourceTest {
     private SaveRouteSuggestionUseCase saveRouteSuggestionUseCase;
     private ListSavedRoutesUseCase listSavedRoutesUseCase;
     private DeleteSavedRouteSuggestionUseCase deleteSavedRouteSuggestionUseCase;
+    private MoveRouteRequestUseCase moveRouteRequestUseCase;
 
     @BeforeEach
     void setUp() {
@@ -39,11 +29,13 @@ class CollectorRouteResourceTest {
         saveRouteSuggestionUseCase = mock(SaveRouteSuggestionUseCase.class);
         listSavedRoutesUseCase = mock(ListSavedRoutesUseCase.class);
         deleteSavedRouteSuggestionUseCase = mock(DeleteSavedRouteSuggestionUseCase.class);
+        moveRouteRequestUseCase = mock(MoveRouteRequestUseCase.class);
         resource = new CollectorRouteResource();
         resource.routeOptimizationUseCase = routeOptimizationUseCase;
         resource.saveRouteSuggestionUseCase = saveRouteSuggestionUseCase;
         resource.listSavedRoutesUseCase = listSavedRoutesUseCase;
         resource.deleteSavedRouteSuggestionUseCase = deleteSavedRouteSuggestionUseCase;
+        resource.moveRouteRequestUseCase = moveRouteRequestUseCase;
     }
 
     @Test
@@ -109,6 +101,50 @@ class CollectorRouteResourceTest {
     }
 
     @Test
+    void moveRouteRequestReturnsUpdatedRoute() {
+        SavedRouteResult saved = savedResult();
+        when(moveRouteRequestUseCase.move(any())).thenReturn(io.smallrye.mutiny.Uni.createFrom().item(saved));
+
+        Response response = resource.moveRouteRequest("saved-1", moveRequest()).await().indefinitely();
+
+        assertEquals(200, response.getStatus());
+        assertEquals(saved, response.getEntity());
+        verify(moveRouteRequestUseCase).move(any());
+    }
+
+    @Test
+    void moveRouteRequestReturnsNotFoundForMissingRoute() {
+        when(moveRouteRequestUseCase.move(any())).thenReturn(io.smallrye.mutiny.Uni.createFrom().failure(
+                new SavedRouteSuggestionNotFoundException("missing")));
+
+        Response response = resource.moveRouteRequest("missing", moveRequest()).await().indefinitely();
+
+        assertEquals(404, response.getStatus());
+        assertEquals("Saved route suggestion not found: missing", response.getEntity());
+    }
+
+    @Test
+    void moveRouteRequestReturnsBadRequestForValidationError() {
+        when(moveRouteRequestUseCase.move(any())).thenReturn(io.smallrye.mutiny.Uni.createFrom().failure(
+                new RouteMoveValidationException("move would exceed target vehicle capacity")));
+
+        Response response = resource.moveRouteRequest("saved-1", moveRequest()).await().indefinitely();
+
+        assertEquals(400, response.getStatus());
+        assertEquals("move would exceed target vehicle capacity", response.getEntity());
+    }
+
+    @Test
+    void moveRouteRequestReturnsConflictForDuplicateFingerprint() {
+        when(moveRouteRequestUseCase.move(any())).thenReturn(io.smallrye.mutiny.Uni.createFrom().failure(new DuplicateSavedRouteException()));
+
+        Response response = resource.moveRouteRequest("saved-1", moveRequest()).await().indefinitely();
+
+        assertEquals(409, response.getStatus());
+        assertEquals("Route suggestion already saved", response.getEntity());
+    }
+
+    @Test
     void deleteSavedRouteReturnsNoContent() {
         when(deleteSavedRouteSuggestionUseCase.delete("saved-1")).thenReturn(io.smallrye.mutiny.Uni.createFrom().voidItem());
 
@@ -151,6 +187,14 @@ class CollectorRouteResourceTest {
         assertEquals("mongo unavailable", response.getEntity());
     }
 
+    private CollectorRouteResource.MoveRouteRequestDTO moveRequest() {
+        CollectorRouteResource.MoveRouteRequestDTO request = new CollectorRouteResource.MoveRouteRequestDTO();
+        request.setCollectionRequestId("request-1");
+        request.setSourceVehicleIndex(0);
+        request.setTargetVehicleIndex(1);
+        return request;
+    }
+
     private CollectorRouteResource.SaveRouteRequestDTO saveRequest() {
         CollectorRouteResource.SaveRouteRequestDTO request = new CollectorRouteResource.SaveRouteRequestDTO();
         request.setCollectorId("collector-1");
@@ -188,8 +232,9 @@ class CollectorRouteResourceTest {
     private CollectorRouteResource.RouteOptimizationRequestDTO validRequest() {
         CollectorRouteResource.RouteOptimizationRequestDTO request = new CollectorRouteResource.RouteOptimizationRequestDTO();
         request.setCollectorId("collector-1");
-        request.setVehicleCount(1);
-        request.setVehicleCapacity(100.0);
+        CollectorRouteResource.RouteVehicleDTO vehicle = new CollectorRouteResource.RouteVehicleDTO();
+        vehicle.setCapacity(100.0);
+        request.setVehicles(List.of(vehicle));
         request.setCandidateRequestIds(List.of("request-1"));
 
         CollectorRouteResource.StartLocationDTO start = new CollectorRouteResource.StartLocationDTO();

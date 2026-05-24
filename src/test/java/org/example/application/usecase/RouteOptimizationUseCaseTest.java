@@ -117,9 +117,7 @@ class RouteOptimizationUseCaseTest {
     private RouteOptimizationCommand command(List<String> candidateIds, double capacity) {
         return new RouteOptimizationCommand(
                 "collector-1",
-                1,
-                capacity,
-                null,
+                List.of(new RouteVehicle(0, capacity)),
                 new StartLocation(StartLocationType.COLLECTOR_ADDRESS, null, null, null),
                 true,
                 candidateIds,

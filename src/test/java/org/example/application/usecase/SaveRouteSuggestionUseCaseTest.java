@@ -43,6 +43,7 @@ class SaveRouteSuggestionUseCaseTest {
         useCase = new SaveRouteSuggestionUseCase();
         useCase.collectionRequestPort = collectionRequestPort;
         useCase.savedRoutePort = savedRoutePort;
+        useCase.fingerprintService = new SavedRouteFingerprintService();
     }
 
     @Test

@@ -3,6 +3,8 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 .kotlin
+ca.pem
+.env
 
 ### IntelliJ IDEA ###
 .idea/modules.xml

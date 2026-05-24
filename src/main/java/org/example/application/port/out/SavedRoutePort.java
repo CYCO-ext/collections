@@ -9,11 +9,17 @@ import java.util.List;
 public interface SavedRoutePort {
     Uni<Void> save(SavedRouteSuggestion route);
 
+    Uni<SavedRouteSuggestion> findById(String savedRouteId);
+
     Uni<SavedRouteSuggestion> findByFingerprint(String fingerprint);
+
+    Uni<SavedRouteSuggestion> findByFingerprintExcludingId(String fingerprint, String excludedSavedRouteId);
 
     Uni<List<SavedRouteSuggestion>> findAllOrderByCreatedAtDesc();
 
     Uni<List<SavedRouteSuggestion>> findOpenContainingCollectionRequest(String collectionRequestId);
+
+    Uni<Void> update(SavedRouteSuggestion route);
 
     Uni<Void> close(String savedRouteId, LocalDateTime closedAt);
 

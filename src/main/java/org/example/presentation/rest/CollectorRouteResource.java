@@ -5,6 +5,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.example.application.route.RouteMapModels.GetSavedRouteMapQuery;
 import org.example.application.route.RouteModels.*;
 import org.example.application.route.SavedRouteModels.MoveRouteRequestCommand;
 import org.example.application.route.SavedRouteModels.SaveRouteSuggestionCommand;
@@ -34,6 +35,9 @@ public class CollectorRouteResource {
 
     @Inject
     MoveRouteRequestUseCase moveRouteRequestUseCase;
+
+    @Inject
+    GetSavedRouteMapUseCase getSavedRouteMapUseCase;
 
     @POST
     @Path("/suggest")
@@ -83,6 +87,31 @@ public class CollectorRouteResource {
                 .onItem().transform(results -> Response.ok(results).build())
                 .onFailure().recoverWithItem(ex -> {
                     LOG.error("Error listing saved routes", ex);
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
+                });
+    }
+
+    @GET
+    @Path("/saved/{savedRouteId}/map")
+    public Uni<Response> getSavedRouteMap(@PathParam("savedRouteId") String savedRouteId,
+                                          @QueryParam("vehicleIndex") Integer vehicleIndex) {
+        LOG.info("GET /collectors/routes/saved/{}/map", savedRouteId);
+        GetSavedRouteMapQuery query = new GetSavedRouteMapQuery(savedRouteId, vehicleIndex);
+        return getSavedRouteMapUseCase.get(query)
+                .onItem().transform(result -> Response.ok(result).build())
+                .onFailure(SavedRouteSuggestionNotFoundException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.NOT_FOUND).entity(ex.getMessage()).build())
+                .onFailure(RouteMapValidationException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build())
+                .onFailure(OpenRouteServiceException.class).recoverWithItem(ex -> {
+                    OpenRouteServiceException providerError = (OpenRouteServiceException) ex;
+                    Response.Status status = providerError.timeout()
+                            ? Response.Status.GATEWAY_TIMEOUT
+                            : Response.Status.BAD_GATEWAY;
+                    return Response.status(status).entity(providerError.getMessage()).build();
+                })
+                .onFailure().recoverWithItem(ex -> {
+                    LOG.error("Error getting saved route map", ex);
                     return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
                 });
     }

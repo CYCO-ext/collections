@@ -26,7 +26,7 @@ public class AddressEnrichmentAdapter implements AddressEnrichmentPort {
     AddressRepository addressRepository;
 
     @Inject
-    NominatimClient nominatimClient;
+    GoogleGeocodingClient googleGeocodingClient;
 
     @Inject
     ViacepClient viacepClient;
@@ -39,9 +39,6 @@ public class AddressEnrichmentAdapter implements AddressEnrichmentPort {
 
     @ConfigProperty(name = "viacep.enabled", defaultValue = "true")
     boolean viacepEnabled;
-
-    @ConfigProperty(name = "enrichment.user-agent", defaultValue = "collections-service/1.0")
-    String userAgent;
 
     @Override
     public Uni<Address> enrich(SyncAddressEvent event) {
@@ -117,24 +114,31 @@ public class AddressEnrichmentAdapter implements AddressEnrichmentPort {
                         address.setEnrichmentSource("cache");
                         return Uni.createFrom().item(address);
                     }
-                    return enrichWithNominatim(address, cacheKey);
+                    return enrichWithGoogleGeocoding(address, cacheKey);
                 });
     }
 
-    private Uni<Address> enrichWithNominatim(Address address, String cacheKey) {
-        String query = buildQuery(address);
-        return nominatimClient.geocode(query, userAgent)
+    private Uni<Address> enrichWithGoogleGeocoding(Address address, String cacheKey) {
+        GoogleGeocodingClient.GoogleGeocodingAddress request = new GoogleGeocodingClient.GoogleGeocodingAddress(
+                address.getStreet(),
+                address.getNumber(),
+                address.getCity(),
+                address.getState(),
+                address.getZipCode(),
+                null
+        );
+        String source = viacepEnabled && address.getZipCode() != null ? "viacep+google-geocoding" : "google-geocoding";
+        return googleGeocodingClient.geocode(request)
                 .flatMap(coords -> {
                     if (coords.isPresent()) {
-                        double[] latlon = coords.get();
-                        address.setLatitude(latlon[0]);
-                        address.setLongitude(latlon[1]);
+                        GoogleGeocodingClient.Coordinates coordinates = coords.get();
+                        address.setLatitude(coordinates.latitude());
+                        address.setLongitude(coordinates.longitude());
                         address.setEnrichmentStatus("ENRICHED");
-                        address.setEnrichmentSource(viacepEnabled && address.getZipCode() != null ? "viacep+nominatim" : "nominatim");
                     } else {
                         address.setEnrichmentStatus("ADDRESS_UNVERIFIED");
-                        address.setEnrichmentSource(viacepEnabled && address.getZipCode() != null ? "viacep+nominatim" : "nominatim");
                     }
+                    address.setEnrichmentSource(source);
 
                     return cacheRepository.upsert(cacheKey, address, address.getEnrichmentSource())
                             .replaceWith(address);
@@ -184,27 +188,6 @@ public class AddressEnrichmentAdapter implements AddressEnrichmentPort {
                 nullToEmpty(normalizeKey(address.getCity())),
                 nullToEmpty(normalizeKey(address.getState()))
         );
-    }
-
-    private String buildQuery(Address address) {
-        StringBuilder query = new StringBuilder();
-        appendPart(query, address.getStreet());
-        appendPart(query, address.getNumber());
-        appendPart(query, address.getCity());
-        appendPart(query, address.getState());
-        appendPart(query, address.getZipCode());
-        appendPart(query, "Brazil");
-        return query.toString();
-    }
-
-    private void appendPart(StringBuilder query, String value) {
-        if (value == null || value.isBlank()) {
-            return;
-        }
-        if (!query.isEmpty()) {
-            query.append(", ");
-        }
-        query.append(value.trim());
     }
 
     private String normalize(String value) {

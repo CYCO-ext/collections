@@ -5,13 +5,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.example.application.usecase.CancelCollectionRequestUseCase;
-import org.example.application.usecase.CollectionCancellationConflictException;
-import org.example.application.usecase.CollectionCancellationForbiddenException;
-import org.example.application.usecase.CollectionRequestNotFoundException;
-import org.example.application.usecase.CollectionRequestUseCase;
-import org.example.domain.entity.Collector;
-import org.example.domain.entity.CollectionRequest;
+import org.example.application.usecase.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,9 +49,15 @@ public class GeneratorResource {
 
         return collectionRequestUseCase.findNearbyCollectors(requestId)
                 .onItem().transform(collectors -> Response.ok(collectors).build())
+                .onFailure(IllegalArgumentException.class).recoverWithItem(ex -> {
+                    Response.Status status = isNotFound(ex)
+                            ? Response.Status.NOT_FOUND
+                            : Response.Status.BAD_REQUEST;
+                    return Response.status(status).entity(ex.getMessage()).build();
+                })
                 .onFailure().recoverWithItem(ex -> {
                     LOG.error("Error finding collectors", ex);
-                    return Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build();
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
                 });
     }
 
@@ -83,6 +83,11 @@ public class GeneratorResource {
                     LOG.error("Error cancelling request by generator", ex);
                     return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
                 });
+    }
+
+    private boolean isNotFound(Throwable ex) {
+        String message = ex.getMessage();
+        return message != null && (message.startsWith("Request not found:") || message.startsWith("Address not found:"));
     }
 
     // DTOs

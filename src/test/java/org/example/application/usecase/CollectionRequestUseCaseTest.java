@@ -1,13 +1,12 @@
 package org.example.application.usecase;
 
 import io.smallrye.mutiny.Uni;
+import org.example.application.port.out.AddressPort;
 import org.example.application.port.out.CollectionRequestPort;
 import org.example.application.port.out.CollectorDiscoveryPort;
-import org.example.application.port.out.AddressPort;
 import org.example.domain.entity.Address;
-import org.example.domain.entity.Collector;
 import org.example.domain.entity.CollectionRequest;
-import org.junit.jupiter.api.BeforeEach;
+import org.example.domain.entity.Collector;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -44,6 +43,8 @@ class CollectionRequestUseCaseTest {
         List<String> materialIds = Arrays.asList("mat-001", "mat-002");
         Double weight = 100.0;
 
+        when(addressPort.findById(addressId))
+                .thenReturn(Uni.createFrom().item(new Address(addressId, "Main St", "City", "12345", 40.0, -74.0)));
         when(collectionRequestPort.save(any(CollectionRequest.class)))
                 .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
 
@@ -62,7 +63,24 @@ class CollectionRequestUseCaseTest {
             assertEquals(CollectionRequest.Status.PENDING, request.getStatus());
         });
 
+        verify(addressPort).findById(addressId);
         verify(collectionRequestPort).save(any(CollectionRequest.class));
+    }
+
+    @Test
+    void createRequestFailsWhenAddressDoesNotExist() {
+        String generatorId = "gen-001";
+        String addressId = "missing-address";
+        List<String> materialIds = Arrays.asList("mat-001", "mat-002");
+
+        when(addressPort.findById(addressId)).thenReturn(Uni.createFrom().nullItem());
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> useCase.createRequest(generatorId, addressId, materialIds, 100.0).await().indefinitely());
+
+        assertEquals("Address not found: missing-address", exception.getMessage());
+        verify(addressPort).findById(addressId);
+        verify(collectionRequestPort, never()).save(any(CollectionRequest.class));
     }
 
     @Test

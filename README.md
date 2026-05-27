@@ -39,6 +39,7 @@ A API REST usa o prefixo `/api`.
 | `POST` | `/api/collectors/routes/suggest` | Gera sugestao de rota para coletas com status `IN_PROGRESS`. |
 | `POST` | `/api/collectors/routes/save` | Salva uma sugestao de rota. |
 | `GET` | `/api/collectors/routes/saved` | Lista todas as rotas salvas. |
+| `GET` | `/api/collectors/routes/saved/{savedRouteId}/map` | Retorna ou gera o GeoJSON do mapa da rota salva usando OpenRouteService. |
 | `POST` | `/api/collectors/routes/saved/{savedRouteId}/move-request` | Move uma coleta entre veiculos de uma rota salva e recalcula as paradas. |
 | `DELETE` | `/api/collectors/routes/saved/{savedRouteId}` | Remove uma sugestao de rota salva. |
 
@@ -187,9 +188,10 @@ Content-Type: application/json
 | --- | --- | --- |
 | MongoDB | Banco de dados | Persistencia de coletas, coletores, enderecos, cache de enderecos e rotas salvas. |
 | Kafka / Aiven Kafka | Broker de mensagens | Consumo de eventos de sincronizacao e publicacao de eventos de coleta. |
-| ViaCEP | API externa | Enriquecimento de enderecos a partir de CEP. |
-| Nominatim OpenStreetMap | API externa | Geocodificacao e obtencao de coordenadas de enderecos. |
+| ViaCEP | API externa | Normalizacao de enderecos brasileiros a partir de CEP. |
+| Google Geocoding API | API externa | Geocodificacao e obtencao de coordenadas de enderecos usando rua, numero, cidade, estado e CEP. |
 | Google OR-Tools | Biblioteca nativa | Otimizacao das rotas sugeridas para os veiculos do coletor. |
+| OpenRouteService | API externa | Geracao de GeoJSON de mapas para rotas salvas usando o perfil `driving-car`. |
 | Servico de cadastro/usuarios | Microsservico externo | Origem esperada dos eventos de sincronizacao de coletores e enderecos. |
 
 Principais variaveis de ambiente:
@@ -203,8 +205,17 @@ KAFKA_USERNAME=<usuario-kafka>
 KAFKA_PASSWORD=<senha-kafka>
 KAFKA_SSL_TRUSTSTORE_TYPE=PEM
 KAFKA_SSL_TRUSTSTORE_LOCATION=ca.pem
+GOOGLE_GEOCODING_API_KEY=<api-key-google-geocoding>
+GOOGLE_GEOCODING_BASE_URL=https://maps.googleapis.com
+GOOGLE_GEOCODING_TIMEOUT_MS=5000
+GOOGLE_GEOCODING_COUNTRY=Brazil
+OPENROUTESERVICE_API_KEY=<api-key-openrouteservice>
+OPENROUTESERVICE_BASE_URL=https://api.openrouteservice.org
+OPENROUTESERVICE_TIMEOUT_MS=10000
 PORT=8080
 ```
+
+O enriquecimento de coordenadas usa Google Geocoding API. O servico monta a consulta com rua, numero, cidade, estado, CEP e pais; quando ViaCEP esta habilitado, ele pode preencher ou normalizar rua, cidade, estado e CEP antes da chamada ao Google. Coordenadas informadas no evento, enderecos duplicados e entradas em cache evitam chamadas externas repetidas. As fontes registradas sao `provided`, `cache`, `google-geocoding` ou `viacep+google-geocoding`.
 
 ## 5. Responsavel pelo servico
 
@@ -313,6 +324,9 @@ gcloud run deploy cyco-collections \
 - O otimizador pode descartar paradas quando `allowDroppingStops` estiver habilitado, aplicando o custo configurado em `dropPenalty`.
 - Ao salvar uma rota, o servico deve bloquear sugestoes duplicadas.
 - Uma rota salva deve ser fechada quando todas as coletas associadas estiverem concluidas.
+- O mapa de uma rota salva deve ser gerado com OpenRouteService e persistido em MongoDB na colecao `route_maps`.
+- O GeoJSON de mapa deve ser reutilizado enquanto a rota do veiculo nao mudar.
+- Quando uma rota de veiculo mudar, por exemplo apos `move-request`, o proximo acesso ao mapa deve recalcular somente os veiculos afetados pelo fingerprint da rota.
 - Ao mover uma coleta entre veiculos de uma rota salva, o sistema deve recalcular automaticamente a melhor posicao da parada no veiculo de destino.
 
 ## 8. Eventos publicados ou consumidos

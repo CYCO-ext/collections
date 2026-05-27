@@ -3,12 +3,12 @@ package org.example.application.usecase;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import org.example.application.port.out.AddressPort;
 import org.example.application.port.out.CollectionRequestPort;
 import org.example.application.port.out.CollectorDiscoveryPort;
-import org.example.application.port.out.AddressPort;
 import org.example.domain.entity.Address;
-import org.example.domain.entity.Collector;
 import org.example.domain.entity.CollectionRequest;
+import org.example.domain.entity.Collector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,8 +34,10 @@ public class CollectionRequestUseCase {
         LOG.info("Creating collection request for generator: {}, address: {}", generatorId, addressId);
 
         CollectionRequest request = new CollectionRequest(generatorId, addressId, materialIds, weight);
-        
-        return collectionRequestPort.save(request)
+
+        return addressPort.findById(addressId)
+                .onItem().ifNull().failWith(() -> new IllegalArgumentException("Address not found: " + addressId))
+                .flatMap(address -> collectionRequestPort.save(request))
                 .replaceWith(request)
                 .invoke(() -> LOG.info("Collection request created: {}", request.getId()));
     }

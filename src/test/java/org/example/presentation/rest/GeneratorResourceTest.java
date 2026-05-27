@@ -2,18 +2,12 @@ package org.example.presentation.rest;
 
 import io.smallrye.mutiny.Uni;
 import jakarta.ws.rs.core.Response;
-import org.example.application.usecase.CancelCollectionRequestUseCase;
-import org.example.application.usecase.CollectionCancellationConflictException;
-import org.example.application.usecase.CollectionCancellationForbiddenException;
-import org.example.application.usecase.CollectionRequestNotFoundException;
-import org.example.application.usecase.CollectionRequestUseCase;
+import org.example.application.usecase.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class GeneratorResourceTest {
     private GeneratorResource resource;
@@ -27,6 +21,28 @@ class GeneratorResourceTest {
         resource = new GeneratorResource();
         resource.collectionRequestUseCase = collectionRequestUseCase;
         resource.cancelCollectionRequestUseCase = cancelCollectionRequestUseCase;
+    }
+
+    @Test
+    void getNearbyCollectorsReturnsNotFoundForMissingAddress() {
+        when(collectionRequestUseCase.findNearbyCollectors("request-1"))
+                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Address not found: addr-1")));
+
+        Response response = resource.getNearbyCollectors("request-1").await().indefinitely();
+
+        assertEquals(404, response.getStatus());
+        assertEquals("Address not found: addr-1", response.getEntity());
+    }
+
+    @Test
+    void getNearbyCollectorsReturnsNotFoundForMissingRequest() {
+        when(collectionRequestUseCase.findNearbyCollectors("missing"))
+                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Request not found: missing")));
+
+        Response response = resource.getNearbyCollectors("missing").await().indefinitely();
+
+        assertEquals(404, response.getStatus());
+        assertEquals("Request not found: missing", response.getEntity());
     }
 
     @Test

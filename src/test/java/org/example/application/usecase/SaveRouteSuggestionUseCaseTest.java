@@ -90,7 +90,7 @@ class SaveRouteSuggestionUseCaseTest {
         RouteOptimizationResult suggestion = new RouteOptimizationResult(
                 SolverStatus.FEASIBLE,
                 new SolverMetadata("TEST", 1, 10, 0),
-                List.of(new RoutePlan(0, 100.0, 0.0, 0, List.of())),
+                List.of(new RoutePlan(0, "Truck A", 100.0, 0.0, 0, List.of())),
                 List.of()
         );
 
@@ -108,7 +108,7 @@ class SaveRouteSuggestionUseCaseTest {
         return new RouteOptimizationResult(
                 SolverStatus.FEASIBLE,
                 new SolverMetadata("TEST", 1, 10, 0),
-                List.of(new RoutePlan(0, 100.0, 10.0, 1000, List.of(
+                List.of(new RoutePlan(0, "Truck A", 100.0, 10.0, 1000, List.of(
                         new RouteStop(1, requestId, "address-1", -23.0, -46.0, 10.0, 10.0, 1000)
                 ))),
                 List.of()

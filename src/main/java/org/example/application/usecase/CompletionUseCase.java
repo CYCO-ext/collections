@@ -26,14 +26,17 @@ public class CompletionUseCase {
     @Inject
     CloseSavedRoutesUseCase closeSavedRoutesUseCase;
 
+    @Inject
+    CollectionStatusNotificationUseCase notificationUseCase;
+
     public Uni<Void> confirmGeneratorCompletion(String requestId) {
         LOG.info("Generator confirming completion for request: {}", requestId);
 
         return collectionRequestPort.findById(requestId)
                 .onItem().ifNull().failWith(() -> new IllegalArgumentException("Request not found: " + requestId))
                 .flatMap(request -> {
-                    if (!CollectionRequest.Status.IN_PROGRESS.equals(request.getStatus())) {
-                        return Uni.createFrom().failure(new IllegalStateException("Request is not IN_PROGRESS"));
+                    if (!CollectionRequest.Status.IN_PROGRESS.equals(request.getStatus()) && !CollectionRequest.Status.ON_THE_WAY.equals(request.getStatus())) {
+                        return Uni.createFrom().failure(new IllegalStateException("Request is not IN_PROGRESS or ON_THE_WAY"));
                     }
                     request.setGeneratorConfirmed(true);
                     return collectionRequestPort.update(request)
@@ -48,8 +51,8 @@ public class CompletionUseCase {
         return collectionRequestPort.findById(requestId)
                 .onItem().ifNull().failWith(() -> new IllegalArgumentException("Request not found: " + requestId))
                 .flatMap(request -> {
-                    if (!CollectionRequest.Status.IN_PROGRESS.equals(request.getStatus())) {
-                        return Uni.createFrom().failure(new IllegalStateException("Request is not IN_PROGRESS"));
+                    if (!CollectionRequest.Status.IN_PROGRESS.equals(request.getStatus()) && !CollectionRequest.Status.ON_THE_WAY.equals(request.getStatus())) {
+                        return Uni.createFrom().failure(new IllegalStateException("Request is not IN_PROGRESS or ON_THE_WAY"));
                     }
                     request.setCollectorConfirmed(true);
                     return collectionRequestPort.update(request)
@@ -63,7 +66,8 @@ public class CompletionUseCase {
             request.setStatus(CollectionRequest.Status.COMPLETED);
             return collectionRequestPort.update(request)
                     .flatMap(it -> publishCompletionEvent(request))
-                    .flatMap(it -> closeSavedRoutesUseCase.closeRoutesContaining(request.getId()));
+                    .flatMap(it -> closeSavedRoutesUseCase.closeRoutesContaining(request.getId()))
+                    .flatMap(it -> notificationUseCase.notifyGenerator(request, "COLLECTION_COMPLETED"));
         }
         return Uni.createFrom().nullItem().replaceWithVoid();
     }

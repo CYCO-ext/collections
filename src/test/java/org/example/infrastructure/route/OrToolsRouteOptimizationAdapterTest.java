@@ -16,13 +16,14 @@ class OrToolsRouteOptimizationAdapterTest {
     @Test
     void optimizeRespectsSingleVehicleCapacity() {
         RouteOptimizationResult result = adapter.optimize(problem(
-                List.of(new RouteVehicle(0, 10.0)),
+                List.of(new RouteVehicle(0, "Truck A", 10.0)),
                 List.of(stop("request-1", 4.0), stop("request-2", 6.0)),
                 false
         ));
 
         assertEquals(SolverStatus.FEASIBLE, result.status());
         assertEquals(1, result.routes().size());
+        assertEquals("Truck A", result.routes().getFirst().vehicleName());
         assertEquals(10.0, result.routes().getFirst().totalLoad());
         assertTrue(result.unassigned().isEmpty());
     }
@@ -30,7 +31,7 @@ class OrToolsRouteOptimizationAdapterTest {
     @Test
     void optimizeSplitsStopsAcrossVehiclesWhenCapacityRequiresIt() {
         RouteOptimizationResult result = adapter.optimize(problem(
-                List.of(new RouteVehicle(0, 10.0), new RouteVehicle(1, 10.0)),
+                List.of(new RouteVehicle(0, "Truck A", 10.0), new RouteVehicle(1, "Van B", 10.0)),
                 List.of(stop("request-1", 8.0), stop("request-2", 8.0)),
                 false
         ));
@@ -43,7 +44,7 @@ class OrToolsRouteOptimizationAdapterTest {
     @Test
     void optimizeDropsStopsWhenCapacityIsInsufficientAndDroppingIsEnabled() {
         RouteOptimizationResult result = adapter.optimize(problem(
-                List.of(new RouteVehicle(0, 10.0)),
+                List.of(new RouteVehicle(0, "Truck A", 10.0)),
                 List.of(stop("request-1", 8.0), stop("request-2", 8.0)),
                 true
         ));

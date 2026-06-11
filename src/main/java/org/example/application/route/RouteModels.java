@@ -28,6 +28,7 @@ public final class RouteModels {
         MATERIAL_NOT_ACCEPTED,
         INVALID_DEMAND,
         OVER_CAPACITY,
+        NOT_FOUND,
         SOLVER_DROPPED,
         INFEASIBLE
     }
@@ -35,7 +36,7 @@ public final class RouteModels {
     public record RouteLocation(String id, String addressId, double latitude, double longitude) {
     }
 
-    public record RouteVehicle(int index, double capacity) {
+    public record RouteVehicle(int index, String name, double capacity) {
     }
 
     public record RouteFilters(List<String> materialIds, Double maxDistanceKmFromStart, Boolean onlyInProgress) {
@@ -109,6 +110,7 @@ public final class RouteModels {
 
     public record RoutePlan(
             int vehicleIndex,
+            String vehicleName,
             double capacity,
             double totalLoad,
             long totalDistanceMeters,

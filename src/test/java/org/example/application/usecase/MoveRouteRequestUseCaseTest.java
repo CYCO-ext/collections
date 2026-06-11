@@ -54,6 +54,8 @@ class MoveRouteRequestUseCaseTest {
         RoutePlan source = result.suggestion().routes().get(0);
         RoutePlan target = result.suggestion().routes().get(1);
         assertEquals(List.of(), source.stops());
+        assertEquals("Truck A", source.vehicleName());
+        assertEquals("Van B", target.vehicleName());
         assertEquals(List.of("request-a", "request-b", "request-c"), target.stops().stream().map(RouteStop::collectionRequestId).toList());
         assertEquals(List.of(1, 2, 3), target.stops().stream().map(RouteStop::sequence).toList());
         assertEquals(List.of(10.0, 20.0, 30.0), target.stops().stream().map(RouteStop::accumulatedLoad).toList());
@@ -155,10 +157,10 @@ class MoveRouteRequestUseCaseTest {
                 SolverStatus.FEASIBLE,
                 new SolverMetadata("TEST", 1, 0, 0),
                 List.of(
-                        new RoutePlan(0, 100.0, 10.0, 0, List.of(
+                        new RoutePlan(0, "Truck A", 100.0, 10.0, 0, List.of(
                                 stop(1, "request-b", 0.0, 1.0, 10.0, 10.0)
                         )),
-                        new RoutePlan(1, targetCapacity, 20.0, 0, List.of(
+                        new RoutePlan(1, "Van B", targetCapacity, 20.0, 0, List.of(
                                 stop(1, "request-a", 0.0, 0.0, 10.0, 10.0),
                                 stop(2, "request-c", 0.0, 2.0, 10.0, 20.0)
                         ))

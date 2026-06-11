@@ -13,14 +13,17 @@ class GeneratorResourceTest {
     private GeneratorResource resource;
     private CollectionRequestUseCase collectionRequestUseCase;
     private CancelCollectionRequestUseCase cancelCollectionRequestUseCase;
+    private RegisterGeneratorNotificationTokenUseCase registerGeneratorNotificationTokenUseCase;
 
     @BeforeEach
     void setUp() {
         collectionRequestUseCase = mock(CollectionRequestUseCase.class);
         cancelCollectionRequestUseCase = mock(CancelCollectionRequestUseCase.class);
+        registerGeneratorNotificationTokenUseCase = mock(RegisterGeneratorNotificationTokenUseCase.class);
         resource = new GeneratorResource();
         resource.collectionRequestUseCase = collectionRequestUseCase;
         resource.cancelCollectionRequestUseCase = cancelCollectionRequestUseCase;
+        resource.registerGeneratorNotificationTokenUseCase = registerGeneratorNotificationTokenUseCase;
     }
 
     @Test
@@ -43,6 +46,30 @@ class GeneratorResourceTest {
 
         assertEquals(404, response.getStatus());
         assertEquals("Request not found: missing", response.getEntity());
+    }
+
+    @Test
+    void registerNotificationTokenDelegatesToUseCase() {
+        GeneratorResource.NotificationTokenDTO dto = notificationTokenDto("fcm-token", "android");
+        when(registerGeneratorNotificationTokenUseCase.register("generator-1", "fcm-token", "android"))
+                .thenReturn(Uni.createFrom().voidItem());
+
+        Response response = resource.registerNotificationToken("generator-1", dto).await().indefinitely();
+
+        assertEquals(204, response.getStatus());
+        verify(registerGeneratorNotificationTokenUseCase).register("generator-1", "fcm-token", "android");
+    }
+
+    @Test
+    void registerNotificationTokenReturnsBadRequestForValidationError() {
+        GeneratorResource.NotificationTokenDTO dto = notificationTokenDto(" ", "ios");
+        when(registerGeneratorNotificationTokenUseCase.register("generator-1", " ", "ios"))
+                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("notification token is required")));
+
+        Response response = resource.registerNotificationToken("generator-1", dto).await().indefinitely();
+
+        assertEquals(400, response.getStatus());
+        assertEquals("notification token is required", response.getEntity());
     }
 
     @Test
@@ -102,6 +129,13 @@ class GeneratorResourceTest {
 
         assertEquals(409, response.getStatus());
         assertEquals("Request is already completed", response.getEntity());
+    }
+
+    private GeneratorResource.NotificationTokenDTO notificationTokenDto(String token, String platform) {
+        GeneratorResource.NotificationTokenDTO dto = new GeneratorResource.NotificationTokenDTO();
+        dto.setToken(token);
+        dto.setPlatform(platform);
+        return dto;
     }
 
     private GeneratorResource.CancelRequestDTO cancelDto(String generatorId) {

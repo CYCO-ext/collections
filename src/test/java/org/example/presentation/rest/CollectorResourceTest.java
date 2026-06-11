@@ -11,6 +11,7 @@ import org.example.application.usecase.CollectorNotFoundException;
 import org.example.application.usecase.CollectorResponseUseCase;
 import org.example.application.usecase.CollectorSelectionUseCase;
 import org.example.application.usecase.GetCollectorAddressUseCase;
+import org.example.application.usecase.MarkCollectorOnTheWayUseCase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -25,6 +26,7 @@ class CollectorResourceTest {
     private CollectorResponseUseCase collectorResponseUseCase;
     private GetCollectorAddressUseCase getCollectorAddressUseCase;
     private CancelCollectionRequestUseCase cancelCollectionRequestUseCase;
+    private MarkCollectorOnTheWayUseCase markCollectorOnTheWayUseCase;
 
     @BeforeEach
     void setUp() {
@@ -32,11 +34,13 @@ class CollectorResourceTest {
         collectorResponseUseCase = mock(CollectorResponseUseCase.class);
         getCollectorAddressUseCase = mock(GetCollectorAddressUseCase.class);
         cancelCollectionRequestUseCase = mock(CancelCollectionRequestUseCase.class);
+        markCollectorOnTheWayUseCase = mock(MarkCollectorOnTheWayUseCase.class);
         resource = new CollectorResource();
         resource.collectorSelectionUseCase = collectorSelectionUseCase;
         resource.collectorResponseUseCase = collectorResponseUseCase;
         resource.getCollectorAddressUseCase = getCollectorAddressUseCase;
         resource.cancelCollectionRequestUseCase = cancelCollectionRequestUseCase;
+        resource.markCollectorOnTheWayUseCase = markCollectorOnTheWayUseCase;
     }
 
     @Test
@@ -92,6 +96,29 @@ class CollectorResourceTest {
 
         assertEquals(200, response.getStatus());
         verify(collectorResponseUseCase).acceptRequest("request-1");
+    }
+
+    @Test
+    void markOnTheWayDelegatesToUseCase() {
+        CollectorResource.OnTheWayDTO dto = onTheWayDto("collector-1");
+        when(markCollectorOnTheWayUseCase.markOnTheWay("request-1", "collector-1")).thenReturn(Uni.createFrom().voidItem());
+
+        Response response = resource.markOnTheWay("request-1", dto).await().indefinitely();
+
+        assertEquals(200, response.getStatus());
+        verify(markCollectorOnTheWayUseCase).markOnTheWay("request-1", "collector-1");
+    }
+
+    @Test
+    void markOnTheWayReturnsConflictForInvalidStatus() {
+        CollectorResource.OnTheWayDTO dto = onTheWayDto("collector-1");
+        when(markCollectorOnTheWayUseCase.markOnTheWay("request-1", "collector-1")).thenReturn(Uni.createFrom().failure(
+                new CollectionCancellationConflictException("Request cannot be marked on the way from status: PENDING")));
+
+        Response response = resource.markOnTheWay("request-1", dto).await().indefinitely();
+
+        assertEquals(409, response.getStatus());
+        assertEquals("Request cannot be marked on the way from status: PENDING", response.getEntity());
     }
 
     @Test
@@ -151,6 +178,12 @@ class CollectorResourceTest {
 
         assertEquals(409, response.getStatus());
         assertEquals("Request is already cancelled", response.getEntity());
+    }
+
+    private CollectorResource.OnTheWayDTO onTheWayDto(String collectorId) {
+        CollectorResource.OnTheWayDTO dto = new CollectorResource.OnTheWayDTO();
+        dto.setCollectorId(collectorId);
+        return dto;
     }
 
     private CollectorResource.CancelRequestDTO cancelDto(String collectorId) {

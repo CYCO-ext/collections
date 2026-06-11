@@ -1,6 +1,7 @@
 package org.example.application.usecase;
 
 import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.infrastructure.Infrastructure;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -9,11 +10,14 @@ import org.example.application.route.RouteModels.*;
 import org.example.domain.entity.Address;
 import org.example.domain.entity.CollectionRequest;
 import org.example.domain.entity.Collector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
 @Singleton
 public class RouteOptimizationUseCase {
+    private static final Logger LOG = LoggerFactory.getLogger(RouteOptimizationUseCase.class);
     private static final String SOLVER_ENGINE = "OR_TOOLS";
 
     @Inject
@@ -110,9 +114,16 @@ public class RouteOptimizationUseCase {
     private Uni<List<CollectionRequest>> loadCandidates(RouteOptimizationCommand command) {
         List<String> explicitIds = command.candidateRequestIdsOrEmpty();
         if (!explicitIds.isEmpty()) {
-            return collectionRequestPort.findByIds(explicitIds);
+            LOG.info("Route optimization requested explicit candidates collectorId={} requestedIds={}", command.collectorId(), explicitIds);
+            return collectionRequestPort.findByIds(explicitIds)
+                    .onItem().invoke(found -> LOG.info(
+                            "Route optimization loaded explicit candidates collectorId={} requestedCount={} foundCount={} foundIds={}",
+                            command.collectorId(), explicitIds.size(), found == null ? 0 : found.size(), collectionIds(found)));
         }
-        return collectionRequestPort.findInProgress(maxCandidates);
+        return collectionRequestPort.findInProgress(maxCandidates)
+                .onItem().invoke(found -> LOG.info(
+                        "Route optimization loaded in-progress candidates collectorId={} foundCount={} foundIds={}",
+                        command.collectorId(), found == null ? 0 : found.size(), collectionIds(found)));
     }
 
     private Uni<RouteOptimizationResult> buildAndSolve(
@@ -126,32 +137,61 @@ public class RouteOptimizationUseCase {
         }
 
         List<CollectionRequest> distinctCandidates = distinctById(candidates);
+        List<UnassignedRouteStop> missingExplicitCandidates = missingExplicitCandidates(command, distinctCandidates);
+        if (!missingExplicitCandidates.isEmpty()) {
+            LOG.info("Route optimization missing explicit candidates collectorId={} missingIds={}",
+                    command.collectorId(), unassignedIds(missingExplicitCandidates));
+        }
         List<Uni<Address>> addressLookups = distinctCandidates.stream()
                 .map(request -> addressPort.findById(request.getAddressId()))
                 .toList();
 
-        return Uni.combine().all().unis(addressLookups).with(addresses -> {
-            CandidateBuildResult buildResult = buildCandidates(command, collector, depot, distinctCandidates, addresses);
-            if (buildResult.routableStops().isEmpty()) {
-                return emptyResult(buildResult.unassigned());
-            }
+        return Uni.combine().all().unis(addressLookups)
+                .with(addresses -> buildCandidates(command, collector, depot, distinctCandidates, addresses)
+                        .withAdditionalUnassigned(missingExplicitCandidates))
+                .onItem().invoke(buildResult -> LOG.info(
+                        "Route optimization candidate build collectorId={} routableIds={} unassigned={}",
+                        command.collectorId(), routableIds(buildResult.routableStops()), unassignedSummary(buildResult.unassigned())))
+                .flatMap(buildResult -> {
+                    if (buildResult.routableStops().isEmpty()) {
+                        return Uni.createFrom().item(emptyResult(buildResult.unassigned()));
+                    }
+                    return solveOnWorker(command, depot, buildResult);
+                });
+    }
 
-            List<RouteVehicle> vehicles = vehicles(command);
-            long[][] matrix = distanceMatrixPort.buildMatrixMeters(depot, buildResult.routableStops());
-            RouteOptions options = command.optionsOrDefault();
-            RouteOptimizationProblem problem = new RouteOptimizationProblem(
-                    depot,
-                    vehicles,
-                    buildResult.routableStops(),
-                    matrix,
-                    options,
-                    boundedTimeLimit(options),
-                    options.dropPenalty() == null ? defaultDropPenalty : options.dropPenalty()
-            );
+    private Uni<RouteOptimizationResult> solveOnWorker(
+            RouteOptimizationCommand command,
+            RouteLocation depot,
+            CandidateBuildResult buildResult
+    ) {
+        return Uni.createFrom().item(() -> {
+                    List<RouteVehicle> vehicles = vehicles(command);
+                    long[][] matrix = distanceMatrixPort.buildMatrixMeters(depot, buildResult.routableStops());
+                    RouteOptions options = command.optionsOrDefault();
+                    RouteOptimizationProblem problem = new RouteOptimizationProblem(
+                            depot,
+                            vehicles,
+                            buildResult.routableStops(),
+                            matrix,
+                            options,
+                            boundedTimeLimit(options),
+                            effectiveDropPenalty(options, matrix)
+                    );
 
-            RouteOptimizationResult solved = routeOptimizationPort.optimize(problem);
-            return solved.withAdditionalUnassigned(buildResult.unassigned());
-        });
+                    LOG.info("Route optimization solver input collectorId={} routableIds={} vehicleIndexes={} dropPenalty={} timeLimitSeconds={}",
+                            command.collectorId(), routableIds(buildResult.routableStops()), vehicleIndexes(vehicles), problem.dropPenalty(), problem.timeLimitSeconds());
+                    RouteOptimizationResult solved = routeOptimizationPort.optimize(problem);
+                    LOG.info("Route optimization solver output collectorId={} status={} assignedIds={} solverUnassigned={} droppedStops={}",
+                            command.collectorId(), solved.status(), assignedIds(solved.routes()), unassignedSummary(solved.unassigned()),
+                            solved.solver() == null ? null : solved.solver().droppedStops());
+                    RouteOptimizationResult reconciled = reconcileSolverOutput(solved, buildResult.routableStops());
+                    RouteOptimizationResult finalResult = reconciled.withAdditionalUnassigned(buildResult.unassigned());
+                    LOG.info("Route optimization final output collectorId={} status={} assignedIds={} unassigned={}",
+                            command.collectorId(), finalResult.status(), assignedIds(finalResult.routes()), unassignedSummary(finalResult.unassigned()));
+                    return finalResult;
+                })
+                .runSubscriptionOn(Infrastructure.getDefaultWorkerPool());
     }
 
     private CandidateBuildResult buildCandidates(
@@ -231,6 +271,22 @@ public class RouteOptimizationUseCase {
                 .toList();
     }
 
+    private List<UnassignedRouteStop> missingExplicitCandidates(RouteOptimizationCommand command, List<CollectionRequest> candidates) {
+        List<String> explicitIds = command.candidateRequestIdsOrEmpty();
+        if (explicitIds.isEmpty()) {
+            return List.of();
+        }
+        Set<String> foundIds = new HashSet<>();
+        for (CollectionRequest candidate : candidates) {
+            foundIds.add(candidate.getId());
+        }
+        Set<String> missingIds = new LinkedHashSet<>(explicitIds);
+        missingIds.removeAll(foundIds);
+        return missingIds.stream()
+                .map(id -> new UnassignedRouteStop(id, UnassignedReason.NOT_FOUND))
+                .toList();
+    }
+
     private RouteOptimizationResult emptyResult(List<UnassignedRouteStop> unassigned) {
         return new RouteOptimizationResult(
                 SolverStatus.INFEASIBLE,
@@ -240,6 +296,35 @@ public class RouteOptimizationUseCase {
         );
     }
 
+    private RouteOptimizationResult reconcileSolverOutput(RouteOptimizationResult solved, List<RouteCandidateStop> routableStops) {
+        Set<String> missingIds = new LinkedHashSet<>();
+        for (RouteCandidateStop stop : routableStops) {
+            missingIds.add(stop.collectionRequestId());
+        }
+        if (solved.routes() != null) {
+            for (RoutePlan route : solved.routes()) {
+                if (route.stops() == null) {
+                    continue;
+                }
+                for (RouteStop stop : route.stops()) {
+                    missingIds.remove(stop.collectionRequestId());
+                }
+            }
+        }
+        if (solved.unassigned() != null) {
+            for (UnassignedRouteStop stop : solved.unassigned()) {
+                missingIds.remove(stop.collectionRequestId());
+            }
+        }
+        if (missingIds.isEmpty()) {
+            return solved;
+        }
+        List<UnassignedRouteStop> missing = missingIds.stream()
+                .map(id -> new UnassignedRouteStop(id, UnassignedReason.SOLVER_DROPPED))
+                .toList();
+        return solved.withAdditionalUnassigned(missing);
+    }
+
     private List<RouteVehicle> vehicles(RouteOptimizationCommand command) {
         return command.vehicles();
     }
@@ -247,6 +332,33 @@ public class RouteOptimizationUseCase {
     private int boundedTimeLimit(RouteOptions options) {
         int requested = options.timeLimitSeconds() == null ? defaultTimeLimitSeconds : options.timeLimitSeconds();
         return Math.max(1, Math.min(requested, maxTimeLimitSeconds));
+    }
+
+    private long effectiveDropPenalty(RouteOptions options, long[][] matrix) {
+        long requested = options.dropPenalty() == null ? defaultDropPenalty : options.dropPenalty();
+        long upperBound = sequentialRouteUpperBound(matrix);
+        if (upperBound == Long.MAX_VALUE) {
+            return requested;
+        }
+        return Math.max(requested, upperBound + 1);
+    }
+
+    private long sequentialRouteUpperBound(long[][] matrix) {
+        if (matrix == null || matrix.length <= 1) {
+            return 0;
+        }
+        long total = 0;
+        for (int index = 0; index < matrix.length - 1; index++) {
+            total = safeAdd(total, matrix[index][index + 1]);
+        }
+        return safeAdd(total, matrix[matrix.length - 1][0]);
+    }
+
+    private long safeAdd(long left, long right) {
+        if (right > 0 && left > Long.MAX_VALUE - right) {
+            return Long.MAX_VALUE;
+        }
+        return left + right;
     }
 
     private RouteLocation toRouteLocation(String id, Address address) {
@@ -288,6 +400,70 @@ public class RouteOptimizationUseCase {
         return value == null || value.trim().isEmpty();
     }
 
+    private List<String> collectionIds(List<CollectionRequest> requests) {
+        if (requests == null) {
+            return List.of();
+        }
+        return requests.stream()
+                .map(CollectionRequest::getId)
+                .toList();
+    }
+
+    private List<String> routableIds(List<RouteCandidateStop> stops) {
+        if (stops == null) {
+            return List.of();
+        }
+        return stops.stream()
+                .map(RouteCandidateStop::collectionRequestId)
+                .toList();
+    }
+
+    private List<String> assignedIds(List<RoutePlan> routes) {
+        if (routes == null) {
+            return List.of();
+        }
+        return routes.stream()
+                .filter(route -> route.stops() != null)
+                .flatMap(route -> route.stops().stream())
+                .map(RouteStop::collectionRequestId)
+                .toList();
+    }
+
+    private List<Integer> vehicleIndexes(List<RouteVehicle> vehicles) {
+        if (vehicles == null) {
+            return List.of();
+        }
+        return vehicles.stream()
+                .map(RouteVehicle::index)
+                .toList();
+    }
+
+    private List<String> unassignedIds(List<UnassignedRouteStop> stops) {
+        if (stops == null) {
+            return List.of();
+        }
+        return stops.stream()
+                .map(UnassignedRouteStop::collectionRequestId)
+                .toList();
+    }
+
+    private List<String> unassignedSummary(List<UnassignedRouteStop> stops) {
+        if (stops == null) {
+            return List.of();
+        }
+        return stops.stream()
+                .map(stop -> stop.collectionRequestId() + ":" + stop.reason())
+                .toList();
+    }
+
     private record CandidateBuildResult(List<RouteCandidateStop> routableStops, List<UnassignedRouteStop> unassigned) {
+        private CandidateBuildResult withAdditionalUnassigned(List<UnassignedRouteStop> additional) {
+            if (additional == null || additional.isEmpty()) {
+                return this;
+            }
+            List<UnassignedRouteStop> merged = new ArrayList<>(unassigned);
+            merged.addAll(additional);
+            return new CandidateBuildResult(routableStops, merged);
+        }
     }
 }

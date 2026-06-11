@@ -14,6 +14,7 @@ import org.example.application.usecase.CollectorNotFoundException;
 import org.example.application.usecase.CollectorResponseUseCase;
 import org.example.application.usecase.CollectorSelectionUseCase;
 import org.example.application.usecase.GetCollectorAddressUseCase;
+import org.example.application.usecase.MarkCollectorOnTheWayUseCase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +36,9 @@ public class CollectorResource {
 
     @Inject
     CancelCollectionRequestUseCase cancelCollectionRequestUseCase;
+
+    @Inject
+    MarkCollectorOnTheWayUseCase markCollectorOnTheWayUseCase;
 
     @GET
     @Path("/{collectorId}/address")
@@ -97,6 +101,30 @@ public class CollectorResource {
     }
 
     @POST
+    @Path("/requests/{requestId}/on-the-way")
+    public Uni<Response> markOnTheWay(
+            @PathParam("requestId") String requestId,
+            OnTheWayDTO dto) {
+        LOG.info("POST /collectors/requests/{}/on-the-way", requestId);
+
+        String collectorId = dto == null ? null : dto.getCollectorId();
+        return markCollectorOnTheWayUseCase.markOnTheWay(requestId, collectorId)
+                .onItem().transform(it -> Response.ok().build())
+                .onFailure(CollectionRequestNotFoundException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.NOT_FOUND).entity(ex.getMessage()).build())
+                .onFailure(CollectionCancellationForbiddenException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.FORBIDDEN).entity(ex.getMessage()).build())
+                .onFailure(CollectionCancellationConflictException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.CONFLICT).entity(ex.getMessage()).build())
+                .onFailure(IllegalArgumentException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build())
+                .onFailure().recoverWithItem(ex -> {
+                    LOG.error("Error marking request on the way", ex);
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
+                });
+    }
+
+    @POST
     @Path("/requests/{requestId}/cancel")
     public Uni<Response> cancelRequest(
             @PathParam("requestId") String requestId,
@@ -125,6 +153,21 @@ public class CollectorResource {
         private String collectorId;
 
         public SelectCollectorDTO() {
+        }
+
+        public String getCollectorId() {
+            return collectorId;
+        }
+
+        public void setCollectorId(String collectorId) {
+            this.collectorId = collectorId;
+        }
+    }
+
+    public static class OnTheWayDTO {
+        private String collectorId;
+
+        public OnTheWayDTO() {
         }
 
         public String getCollectorId() {

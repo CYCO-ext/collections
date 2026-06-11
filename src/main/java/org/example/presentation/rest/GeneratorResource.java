@@ -24,6 +24,9 @@ public class GeneratorResource {
     @Inject
     CancelCollectionRequestUseCase cancelCollectionRequestUseCase;
 
+    @Inject
+    RegisterGeneratorNotificationTokenUseCase registerGeneratorNotificationTokenUseCase;
+
     @POST
     @Path("/requests")
     public Uni<Response> createRequest(CreateRequestDTO dto) {
@@ -57,6 +60,25 @@ public class GeneratorResource {
                 })
                 .onFailure().recoverWithItem(ex -> {
                     LOG.error("Error finding collectors", ex);
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
+                });
+    }
+
+    @PUT
+    @Path("/{generatorId}/notification-token")
+    public Uni<Response> registerNotificationToken(
+            @PathParam("generatorId") String generatorId,
+            NotificationTokenDTO dto) {
+        LOG.info("PUT /generators/{}/notification-token", generatorId);
+
+        String token = dto == null ? null : dto.getToken();
+        String platform = dto == null ? null : dto.getPlatform();
+        return registerGeneratorNotificationTokenUseCase.register(generatorId, token, platform)
+                .onItem().transform(it -> Response.noContent().build())
+                .onFailure(IllegalArgumentException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build())
+                .onFailure().recoverWithItem(ex -> {
+                    LOG.error("Error registering generator notification token", ex);
                     return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
                 });
     }
@@ -130,6 +152,30 @@ public class GeneratorResource {
 
         public void setWeight(Double weight) {
             this.weight = weight;
+        }
+    }
+
+    public static class NotificationTokenDTO {
+        private String token;
+        private String platform;
+
+        public NotificationTokenDTO() {
+        }
+
+        public String getToken() {
+            return token;
+        }
+
+        public void setToken(String token) {
+            this.token = token;
+        }
+
+        public String getPlatform() {
+            return platform;
+        }
+
+        public void setPlatform(String platform) {
+            this.platform = platform;
         }
     }
 

@@ -20,6 +20,7 @@ import java.util.List;
 @Consumes(MediaType.APPLICATION_JSON)
 public class CollectorRouteResource {
     private static final Logger LOG = LoggerFactory.getLogger(CollectorRouteResource.class);
+    private static final int VEHICLE_NAME_MAX_LENGTH = 80;
 
     @Inject
     RouteOptimizationUseCase routeOptimizationUseCase;
@@ -208,9 +209,21 @@ public class CollectorRouteResource {
                     if (vehicle == null || vehicle.getCapacity() == null) {
                         throw new IllegalArgumentException("vehicle capacity is required");
                     }
-                    return new RouteVehicle(index, vehicle.getCapacity());
+                    String name = normalizeVehicleName(vehicle.getName());
+                    return new RouteVehicle(index, name, vehicle.getCapacity());
                 })
                 .toList();
+    }
+
+    private String normalizeVehicleName(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            throw new IllegalArgumentException("vehicle name is required");
+        }
+        String trimmed = name.trim();
+        if (trimmed.length() > VEHICLE_NAME_MAX_LENGTH) {
+            throw new IllegalArgumentException("vehicle name must be at most 80 characters");
+        }
+        return trimmed;
     }
 
     private StartLocation toStartLocation(StartLocationDTO dto) {
@@ -282,7 +295,16 @@ public class CollectorRouteResource {
     }
 
     public static class RouteVehicleDTO {
+        private String name;
         private Double capacity;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
 
         public Double getCapacity() {
             return capacity;

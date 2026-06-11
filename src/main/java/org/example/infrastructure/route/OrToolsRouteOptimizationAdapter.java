@@ -47,7 +47,7 @@ public class OrToolsRouteOptimizationAdapter implements RouteOptimizationPort {
     private RouteOptimizationResult greedyFallback(RouteOptimizationProblem problem, long elapsedMs) {
         List<MutableRoute> routes = new ArrayList<>();
         for (RouteVehicle vehicle : problem.vehicles()) {
-            routes.add(new MutableRoute(vehicle.index(), vehicle.capacity()));
+            routes.add(new MutableRoute(vehicle.index(), vehicle.name(), vehicle.capacity()));
         }
 
         List<UnassignedRouteStop> unassigned = new ArrayList<>();
@@ -125,14 +125,16 @@ public class OrToolsRouteOptimizationAdapter implements RouteOptimizationPort {
 
     private static final class MutableRoute {
         private final int vehicleIndex;
+        private final String vehicleName;
         private final double capacity;
         private final List<RouteStop> stops = new ArrayList<>();
         private int currentNode;
         private double totalLoad;
         private long totalDistanceMeters;
 
-        private MutableRoute(int vehicleIndex, double capacity) {
+        private MutableRoute(int vehicleIndex, String vehicleName, double capacity) {
             this.vehicleIndex = vehicleIndex;
+            this.vehicleName = vehicleName;
             this.capacity = capacity;
             this.currentNode = 0;
         }
@@ -166,7 +168,7 @@ public class OrToolsRouteOptimizationAdapter implements RouteOptimizationPort {
         }
 
         private RoutePlan toPlan() {
-            return new RoutePlan(vehicleIndex, capacity, totalLoad, totalDistanceMeters, List.copyOf(stops));
+            return new RoutePlan(vehicleIndex, vehicleName, capacity, totalLoad, totalDistanceMeters, List.copyOf(stops));
         }
     }
 
@@ -204,6 +206,7 @@ public class OrToolsRouteOptimizationAdapter implements RouteOptimizationPort {
         private void configureRoutingModel() throws ReflectiveOperationException {
             int transitCallbackIndex = registerTransitCallback();
             routingClass.getMethod("setArcCostEvaluatorOfAllVehicles", int.class).invoke(routing, transitCallbackIndex);
+            preferLowerIndexVehicles();
 
             int demandCallbackIndex = registerDemandCallback();
             Method addCapacity = findMethod(routingClass, "addDimensionWithVehicleCapacity", 5);
@@ -218,8 +221,15 @@ public class OrToolsRouteOptimizationAdapter implements RouteOptimizationPort {
             }
         }
 
+        private void preferLowerIndexVehicles() throws ReflectiveOperationException {
+            Method setFixedCost = routingClass.getMethod("setFixedCostOfVehicle", long.class, int.class);
+            for (int vehicleIndex = 0; vehicleIndex < problem.vehicles().size(); vehicleIndex++) {
+                setFixedCost.invoke(routing, (long) vehicleIndex, vehicleIndex);
+            }
+        }
+
         private int registerTransitCallback() throws ReflectiveOperationException {
-            Class<?> callbackClass = Class.forName("com.google.ortools.constraintsolver.LongLongToLong");
+            Class<?> callbackClass = Class.forName("java.util.function.LongBinaryOperator");
             Object callback = proxy(callbackClass, args -> {
                 int fromNode = indexToNode(((Number) args[0]).longValue());
                 int toNode = indexToNode(((Number) args[1]).longValue());
@@ -229,7 +239,7 @@ public class OrToolsRouteOptimizationAdapter implements RouteOptimizationPort {
         }
 
         private int registerDemandCallback() throws ReflectiveOperationException {
-            Class<?> callbackClass = Class.forName("com.google.ortools.constraintsolver.LongToLong");
+            Class<?> callbackClass = Class.forName("java.util.function.LongUnaryOperator");
             Object callback = proxy(callbackClass, args -> demands[indexToNode(((Number) args[0]).longValue())]);
             return ((Number) routingClass.getMethod("registerUnaryTransitCallback", callbackClass).invoke(routing, callback)).intValue();
         }
@@ -305,7 +315,8 @@ public class OrToolsRouteOptimizationAdapter implements RouteOptimizationPort {
                     }
                 }
 
-                routes.add(new RoutePlan(vehicleIndex, problem.vehicles().get(vehicleIndex).capacity(), routeLoad, routeDistance, stops));
+                RouteVehicle vehicle = problem.vehicles().get(vehicleIndex);
+                routes.add(new RoutePlan(vehicleIndex, vehicle.name(), vehicle.capacity(), routeLoad, routeDistance, stops));
             }
             return routes;
         }

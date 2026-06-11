@@ -4,7 +4,9 @@
 
 **Nome do microsservico:** `cyco-collections`
 
-O `cyco-collections` e o microsservico responsavel por gerenciar solicitacoes de coleta de residuos dentro da plataforma Cyco. Ele concentra o ciclo de vida da coleta, desde a criacao da solicitacao pelo gerador ate a selecao do coletor, aceite, cancelamento, conclusao e planejamento de rotas.
+O `cyco-collections` e o microsservico responsavel por gerenciar solicitacoes de coleta de residuos dentro da plataforma
+Cyco. Ele concentra o ciclo de vida da coleta, desde a criacao da solicitacao pelo gerador ate a selecao do coletor,
+aceite, cancelamento, conclusao e planejamento de rotas.
 
 Principais responsabilidades:
 
@@ -22,26 +24,28 @@ O servico foi implementado com Quarkus, Java 21, MongoDB, Kafka e arquitetura or
 
 A API REST usa o prefixo `/api`.
 
-| Metodo | URL | Descricao |
-| --- | --- | --- |
-| `POST` | `/api/generators/requests` | Cria uma nova solicitacao de coleta. |
-| `GET` | `/api/generators/requests/{requestId}/collectors` | Lista coletores proximos e elegiveis para uma solicitacao. |
-| `POST` | `/api/generators/requests/{requestId}/cancel` | Cancela uma solicitacao pelo gerador. |
-| `GET` | `/api/collectors/{collectorId}/address` | Retorna o endereco cadastrado de um coletor. |
-| `POST` | `/api/collectors/requests/{requestId}/select` | Seleciona um coletor para uma solicitacao. |
-| `POST` | `/api/collectors/requests/{requestId}/accept` | Aceita uma solicitacao pelo coletor e coloca a coleta em andamento. |
-| `POST` | `/api/collectors/requests/{requestId}/reject` | Rejeita uma solicitacao pelo coletor. |
-| `POST` | `/api/collectors/requests/{requestId}/cancel` | Cancela uma solicitacao pelo coletor. |
-| `POST` | `/api/requests/{requestId}/confirm-generator` | Registra a confirmacao de conclusao pelo gerador. |
-| `POST` | `/api/requests/{requestId}/confirm-collector` | Registra a confirmacao de conclusao pelo coletor. |
-| `GET` | `/api/collections/search` | Pesquisa coletas por `status`, `collectorId` e `generatorId`, ordenando as mais recentes primeiro. |
-| `GET` | `/api/collections/{id}` | Busca uma coleta pelo identificador. |
-| `POST` | `/api/collectors/routes/suggest` | Gera sugestao de rota para coletas com status `IN_PROGRESS`. |
-| `POST` | `/api/collectors/routes/save` | Salva uma sugestao de rota. |
-| `GET` | `/api/collectors/routes/saved` | Lista todas as rotas salvas. |
-| `GET` | `/api/collectors/routes/saved/{savedRouteId}/map` | Retorna ou gera o GeoJSON do mapa da rota salva usando OpenRouteService. |
-| `POST` | `/api/collectors/routes/saved/{savedRouteId}/move-request` | Move uma coleta entre veiculos de uma rota salva e recalcula as paradas. |
-| `DELETE` | `/api/collectors/routes/saved/{savedRouteId}` | Remove uma sugestao de rota salva. |
+| Metodo   | URL                                                        | Descricao                                                                                          |
+|----------|------------------------------------------------------------|----------------------------------------------------------------------------------------------------|
+| `POST`   | `/api/generators/requests`                                 | Cria uma nova solicitacao de coleta.                                                               |
+| `GET`    | `/api/generators/requests/{requestId}/collectors`          | Lista coletores proximos e elegiveis para uma solicitacao.                                         |
+| `POST`   | `/api/generators/requests/{requestId}/cancel`              | Cancela uma solicitacao pelo gerador.                                                              |
+| `PUT`    | `/api/generators/{generatorId}/notification-token`         | Registra ou atualiza o token FCM do gerador.                                                       |
+| `GET`    | `/api/collectors/{collectorId}/address`                    | Retorna o endereco cadastrado de um coletor.                                                       |
+| `POST`   | `/api/collectors/requests/{requestId}/select`              | Seleciona um coletor para uma solicitacao.                                                         |
+| `POST`   | `/api/collectors/requests/{requestId}/accept`              | Aceita uma solicitacao pelo coletor e coloca a coleta em andamento.                                |
+| `POST`   | `/api/collectors/requests/{requestId}/on-the-way`          | Marca que o coletor esta a caminho da coleta.                                                      |
+| `POST`   | `/api/collectors/requests/{requestId}/reject`              | Rejeita uma solicitacao pelo coletor.                                                              |
+| `POST`   | `/api/collectors/requests/{requestId}/cancel`              | Cancela uma solicitacao pelo coletor.                                                              |
+| `POST`   | `/api/requests/{requestId}/confirm-generator`              | Registra a confirmacao de conclusao pelo gerador.                                                  |
+| `POST`   | `/api/requests/{requestId}/confirm-collector`              | Registra a confirmacao de conclusao pelo coletor.                                                  |
+| `GET`    | `/api/collections/search`                                  | Pesquisa coletas por `status`, `collectorId` e `generatorId`, ordenando as mais recentes primeiro. |
+| `GET`    | `/api/collections/{id}`                                    | Busca uma coleta pelo identificador.                                                               |
+| `POST`   | `/api/collectors/routes/suggest`                           | Gera sugestao de rota para coletas com status `IN_PROGRESS`.                                       |
+| `POST`   | `/api/collectors/routes/save`                              | Salva uma sugestao de rota.                                                                        |
+| `GET`    | `/api/collectors/routes/saved`                             | Lista todas as rotas salvas.                                                                       |
+| `GET`    | `/api/collectors/routes/saved/{savedRouteId}/map`          | Retorna ou gera o GeoJSON do mapa da rota salva usando OpenRouteService.                           |
+| `POST`   | `/api/collectors/routes/saved/{savedRouteId}/move-request` | Move uma coleta entre veiculos de uma rota salva e recalcula as paradas.                           |
+| `DELETE` | `/api/collectors/routes/saved/{savedRouteId}`              | Remove uma sugestao de rota salva.                                                                 |
 
 ## 3. Exemplos de requisicao e resposta
 
@@ -58,7 +62,10 @@ Content-Type: application/json
 {
   "generatorId": "generator-001",
   "addressId": "address-001",
-  "materialIds": ["paper", "plastic"],
+  "materialIds": [
+    "paper",
+    "plastic"
+  ],
   "weight": 12.5
 }
 ```
@@ -71,7 +78,10 @@ Content-Type: application/json
   "generatorId": "generator-001",
   "collectorId": null,
   "addressId": "address-001",
-  "materialIds": ["paper", "plastic"],
+  "materialIds": [
+    "paper",
+    "plastic"
+  ],
   "weight": 12.5,
   "status": "PENDING",
   "createdAt": "2026-05-23T10:00:00Z",
@@ -96,7 +106,9 @@ GET /api/collections/search?status=IN_PROGRESS&collectorId=collector-001&generat
     "generatorId": "generator-001",
     "collectorId": "collector-001",
     "addressId": "address-002",
-    "materialIds": ["metal"],
+    "materialIds": [
+      "metal"
+    ],
     "weight": 8.0,
     "status": "IN_PROGRESS",
     "createdAt": "2026-05-23T12:00:00Z",
@@ -119,9 +131,11 @@ Content-Type: application/json
   "collectorId": "collector-001",
   "vehicles": [
     {
+      "name": "Truck A",
       "capacity": 100.0
     },
     {
+      "name": "Small van",
       "capacity": 80.0
     }
   ],
@@ -131,9 +145,15 @@ Content-Type: application/json
     "longitude": -46.6333
   },
   "endAtStart": true,
-  "candidateRequestIds": ["collection-002", "collection-003"],
+  "candidateRequestIds": [
+    "collection-002",
+    "collection-003"
+  ],
   "filters": {
-    "materialIds": ["paper", "plastic"],
+    "materialIds": [
+      "paper",
+      "plastic"
+    ],
     "maxDistanceKmFromStart": 50.0,
     "onlyInProgress": true
   },
@@ -154,6 +174,7 @@ Content-Type: application/json
   "routes": [
     {
       "vehicleIndex": 0,
+      "vehicleName": "Truck A",
       "totalWeight": 20.5,
       "totalDistanceKm": 14.2,
       "stops": [
@@ -182,17 +203,48 @@ Content-Type: application/json
 }
 ```
 
+### Registrar token FCM do gerador
+
+```http
+PUT /api/generators/generator-001/notification-token
+Content-Type: application/json
+```
+
+```json
+{
+  "token": "fcm-device-token",
+  "platform": "android"
+}
+```
+
+### Marcar coletor a caminho
+
+```http
+POST /api/collectors/requests/collection-001/on-the-way
+Content-Type: application/json
+```
+
+```json
+{
+  "collectorId": "collector-001"
+}
+```
+
+A transicao valida e `IN_PROGRESS -> ON_THE_WAY`. As confirmacoes de conclusao continuam aceitas para coletas
+`IN_PROGRESS` e `ON_THE_WAY`.
+
 ## 4. Dependencias externas
 
-| Dependencia | Tipo | Uso |
-| --- | --- | --- |
-| MongoDB | Banco de dados | Persistencia de coletas, coletores, enderecos, cache de enderecos e rotas salvas. |
-| Kafka / Aiven Kafka | Broker de mensagens | Consumo de eventos de sincronizacao e publicacao de eventos de coleta. |
-| ViaCEP | API externa | Normalizacao de enderecos brasileiros a partir de CEP. |
-| Google Geocoding API | API externa | Geocodificacao e obtencao de coordenadas de enderecos usando rua, numero, cidade, estado e CEP. |
-| Google OR-Tools | Biblioteca nativa | Otimizacao das rotas sugeridas para os veiculos do coletor. |
-| OpenRouteService | API externa | Geracao de GeoJSON de mapas para rotas salvas usando o perfil `driving-car`. |
-| Servico de cadastro/usuarios | Microsservico externo | Origem esperada dos eventos de sincronizacao de coletores e enderecos. |
+| Dependencia                  | Tipo                  | Uso                                                                                             |
+|------------------------------|-----------------------|-------------------------------------------------------------------------------------------------|
+| MongoDB                      | Banco de dados        | Persistencia de coletas, coletores, enderecos, cache de enderecos e rotas salvas.               |
+| Kafka / Aiven Kafka          | Broker de mensagens   | Consumo de eventos de sincronizacao e publicacao de eventos de coleta.                          |
+| ViaCEP                       | API externa           | Normalizacao de enderecos brasileiros a partir de CEP.                                          |
+| Google Geocoding API         | API externa           | Geocodificacao e obtencao de coordenadas de enderecos usando rua, numero, cidade, estado e CEP. |
+| Google OR-Tools              | Biblioteca nativa     | Otimizacao das rotas sugeridas para os veiculos do coletor.                                     |
+| OpenRouteService             | API externa           | Geracao de GeoJSON de mapas para rotas salvas usando o perfil `driving-car`.                    |
+| Firebase Cloud Messaging     | API externa           | Envio de notificacoes push para o gerador quando o status da coleta muda.                       |
+| Servico de cadastro/usuarios | Microsservico externo | Origem esperada dos eventos de sincronizacao de coletores e enderecos.                          |
 
 Principais variaveis de ambiente:
 
@@ -212,16 +264,24 @@ GOOGLE_GEOCODING_COUNTRY=Brazil
 OPENROUTESERVICE_API_KEY=<api-key-openrouteservice>
 OPENROUTESERVICE_BASE_URL=https://api.openrouteservice.org
 OPENROUTESERVICE_TIMEOUT_MS=10000
+FIREBASE_ENABLED=false
+FIREBASE_CREDENTIALS_PATH=/path/to/firebase-service-account.json
+FIREBASE_PROJECT_ID=<firebase-project-id>
+FIREBASE_DRY_RUN=false
 PORT=8080
 ```
 
-O enriquecimento de coordenadas usa Google Geocoding API. O servico monta a consulta com rua, numero, cidade, estado, CEP e pais; quando ViaCEP esta habilitado, ele pode preencher ou normalizar rua, cidade, estado e CEP antes da chamada ao Google. Coordenadas informadas no evento, enderecos duplicados e entradas em cache evitam chamadas externas repetidas. As fontes registradas sao `provided`, `cache`, `google-geocoding` ou `viacep+google-geocoding`.
+O enriquecimento de coordenadas usa Google Geocoding API. O servico monta a consulta com rua, numero, cidade, estado,
+CEP e pais; quando ViaCEP esta habilitado, ele pode preencher ou normalizar rua, cidade, estado e CEP antes da chamada
+ao Google. Coordenadas informadas no evento, enderecos duplicados e entradas em cache evitam chamadas externas
+repetidas. As fontes registradas sao `provided`, `cache`, `google-geocoding` ou `viacep+google-geocoding`.
 
 ## 5. Responsavel pelo servico
 
 **Responsavel:** Lidia Galdino / Equipe Cyco
 
-O responsavel pelo servico deve manter os contratos da API, a configuracao de infraestrutura, os topicos Kafka, as regras de negocio de coleta e a documentacao operacional atualizados.
+O responsavel pelo servico deve manter os contratos da API, a configuracao de infraestrutura, os topicos Kafka, as
+regras de negocio de coleta e a documentacao operacional atualizados.
 
 ## 6. Procedimentos basicos de operacao
 
@@ -281,7 +341,8 @@ gcloud run services logs read cyco-collections --region southamerica-east1
 
 ### Endpoint de health check
 
-O codigo atual nao possui a extensao `quarkus-smallrye-health` configurada no `pom.xml`. Por isso, nao ha um endpoint de health check ativo no servico neste momento.
+O codigo atual nao possui a extensao `quarkus-smallrye-health` configurada no `pom.xml`. Por isso, nao ha um endpoint de
+health check ativo no servico neste momento.
 
 Recomendacao operacional:
 
@@ -309,43 +370,49 @@ gcloud run deploy cyco-collections \
 
 - Uma solicitacao de coleta deve possuir `generatorId`, `addressId`, pelo menos um material e peso maior que zero.
 - Uma nova solicitacao inicia com status `PENDING`.
-- Um coletor pode ser selecionado para uma solicitacao pendente quando for elegivel para os materiais e localizacao da coleta.
+- Um coletor pode ser selecionado para uma solicitacao pendente quando for elegivel para os materiais e localizacao da
+  coleta.
 - Quando o coletor aceita a solicitacao, a coleta passa para `IN_PROGRESS`.
 - O gerador e o coletor podem cancelar a coleta enquanto ela ainda nao estiver finalizada.
 - O cancelamento deve validar se o usuario informado e o gerador ou coletor associado a solicitacao.
 - A conclusao da coleta depende da confirmacao do gerador e do coletor.
 - A coleta so deve ser considerada concluida quando as confirmacoes obrigatorias forem registradas.
 - A pesquisa de coletas deve permitir filtro por `status`, `collectorId` e `generatorId`.
-- A pesquisa de coletas deve retornar os registros em ordem decrescente de data de criacao, ou seja, os mais recentes primeiro.
+- A pesquisa de coletas deve retornar os registros em ordem decrescente de data de criacao, ou seja, os mais recentes
+  primeiro.
 - A sugestao de rota so pode considerar coletas com status `IN_PROGRESS`.
 - Coletas que nao estao em andamento devem ser retornadas como nao alocadas com motivo `NOT_IN_PROGRESS`.
-- A requisicao de sugestao de rota deve informar explicitamente cada veiculo e sua capacidade, pois veiculos diferentes podem suportar pesos diferentes.
+- A requisicao de sugestao de rota deve informar explicitamente cada veiculo e sua capacidade, pois veiculos diferentes
+  podem suportar pesos diferentes.
 - A capacidade de cada veiculo deve ser maior que zero.
-- O otimizador pode descartar paradas quando `allowDroppingStops` estiver habilitado, aplicando o custo configurado em `dropPenalty`.
+- O otimizador pode descartar paradas quando `allowDroppingStops` estiver habilitado, aplicando o custo configurado em
+  `dropPenalty`.
 - Ao salvar uma rota, o servico deve bloquear sugestoes duplicadas.
 - Uma rota salva deve ser fechada quando todas as coletas associadas estiverem concluidas.
 - O mapa de uma rota salva deve ser gerado com OpenRouteService e persistido em MongoDB na colecao `route_maps`.
 - O GeoJSON de mapa deve ser reutilizado enquanto a rota do veiculo nao mudar.
-- Quando uma rota de veiculo mudar, por exemplo apos `move-request`, o proximo acesso ao mapa deve recalcular somente os veiculos afetados pelo fingerprint da rota.
-- Ao mover uma coleta entre veiculos de uma rota salva, o sistema deve recalcular automaticamente a melhor posicao da parada no veiculo de destino.
+- Quando uma rota de veiculo mudar, por exemplo apos `move-request`, o proximo acesso ao mapa deve recalcular somente os
+  veiculos afetados pelo fingerprint da rota.
+- Ao mover uma coleta entre veiculos de uma rota salva, o sistema deve recalcular automaticamente a melhor posicao da
+  parada no veiculo de destino.
 
 ## 8. Eventos publicados ou consumidos
 
 ### Eventos publicados
 
-| Topico | Evento | Descricao |
-| --- | --- | --- |
-| `collection-events` | `COLLECTOR_SELECTED` | Publicado quando um coletor e selecionado para uma solicitacao. |
-| `collection-events` | `COLLECTION_ACCEPTED` | Publicado quando o coletor aceita uma solicitacao. |
-| `collection-events` | `COLLECTION_REJECTED` | Publicado quando o coletor rejeita uma solicitacao. |
-| `collection-events` | `COLLECTION_COMPLETED` | Publicado quando a coleta e concluida. |
+| Topico              | Evento                 | Descricao                                                       |
+|---------------------|------------------------|-----------------------------------------------------------------|
+| `collection-events` | `COLLECTOR_SELECTED`   | Publicado quando um coletor e selecionado para uma solicitacao. |
+| `collection-events` | `COLLECTION_ACCEPTED`  | Publicado quando o coletor aceita uma solicitacao.              |
+| `collection-events` | `COLLECTION_REJECTED`  | Publicado quando o coletor rejeita uma solicitacao.             |
+| `collection-events` | `COLLECTION_COMPLETED` | Publicado quando a coleta e concluida.                          |
 
 ### Eventos consumidos
 
-| Topico | Evento/Dado | Descricao |
-| --- | --- | --- |
-| `addresses-sync` | `SyncAddressEvent` | Sincroniza dados de endereco e executa enriquecimento quando necessario. |
-| `collector-sync` | `SyncCollectorEvent` | Cria ou atualiza o snapshot de um coletor no servico de coletas. |
+| Topico             | Evento/Dado          | Descricao                                                                           |
+|--------------------|----------------------|-------------------------------------------------------------------------------------|
+| `addresses-sync`   | `SyncAddressEvent`   | Sincroniza dados de endereco e executa enriquecimento quando necessario.            |
+| `collector-sync`   | `SyncCollectorEvent` | Cria ou atualiza o snapshot de um coletor no servico de coletas.                    |
 | `collector-update` | `SyncCollectorEvent` | Atualiza dados de um coletor existente usando o mesmo formato do evento de criacao. |
 
 ## 9. Metricas monitoradas
@@ -370,13 +437,16 @@ Metricas recomendadas para operacao do microsservico:
 
 ### ADR-001: Arquitetura hexagonal com Quarkus
 
-O servico utiliza uma organizacao baseada em camadas de dominio, aplicacao, infraestrutura e apresentacao. Essa decisao isola regras de negocio de detalhes externos como MongoDB, Kafka e APIs REST.
+O servico utiliza uma organizacao baseada em camadas de dominio, aplicacao, infraestrutura e apresentacao. Essa decisao
+isola regras de negocio de detalhes externos como MongoDB, Kafka e APIs REST.
 
 ### ADR-002: Sincronizacao por eventos Kafka
 
-Dados de coletores e enderecos sao mantidos localmente por meio de eventos Kafka. Essa abordagem reduz acoplamento direto com outros microsservicos e permite que o servico de coletas opere com snapshots locais.
+Dados de coletores e enderecos sao mantidos localmente por meio de eventos Kafka. Essa abordagem reduz acoplamento
+direto com outros microsservicos e permite que o servico de coletas opere com snapshots locais.
 
 ### ADR-003: Otimizacao de rotas com OR-Tools e fallback
 
-A sugestao de rotas usa Google OR-Tools quando a biblioteca nativa esta disponivel. Caso ocorra falha de carregamento nativo no ambiente, o servico usa uma estrategia interna de fallback para evitar indisponibilidade do endpoint.
+A sugestao de rotas usa Google OR-Tools quando a biblioteca nativa esta disponivel. Caso ocorra falha de carregamento
+nativo no ambiente, o servico usa uma estrategia interna de fallback para evitar indisponibilidade do endpoint.
 

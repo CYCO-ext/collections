@@ -32,6 +32,9 @@ class CompletionUseCaseTest {
     @Mock
     private CloseSavedRoutesUseCase closeSavedRoutesUseCase;
 
+    @Mock
+    private CollectionStatusNotificationUseCase notificationUseCase;
+
     @Test
     void testConfirmGeneratorCompletion() {
         String requestId = "req-001";
@@ -67,6 +70,8 @@ class CompletionUseCaseTest {
                 .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
         when(closeSavedRoutesUseCase.closeRoutesContaining(requestId))
                 .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
+        when(notificationUseCase.notifyGenerator(any(CollectionRequest.class), any()))
+                .thenReturn(Uni.createFrom().voidItem());
 
         Uni<Void> result = useCase.confirmCollectorCompletion(requestId);
 
@@ -93,6 +98,8 @@ class CompletionUseCaseTest {
                 .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
         when(closeSavedRoutesUseCase.closeRoutesContaining(requestId))
                 .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
+        when(notificationUseCase.notifyGenerator(any(CollectionRequest.class), any()))
+                .thenReturn(Uni.createFrom().voidItem());
 
         Uni<Void> result = useCase.confirmCollectorCompletion(requestId);
 

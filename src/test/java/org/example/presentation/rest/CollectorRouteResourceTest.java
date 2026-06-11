@@ -10,6 +10,7 @@ import org.example.application.route.SavedRouteModels.SavedRouteStatus;
 import org.example.application.usecase.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -54,6 +55,61 @@ class CollectorRouteResourceTest {
         RouteOptimizationResult result = (RouteOptimizationResult) response.getEntity();
         assertEquals(SolverStatus.FEASIBLE, result.status());
         assertEquals(1, result.routes().size());
+        assertEquals("Truck A", result.routes().getFirst().vehicleName());
+
+        ArgumentCaptor<RouteOptimizationCommand> captor = ArgumentCaptor.forClass(RouteOptimizationCommand.class);
+        verify(routeOptimizationUseCase).suggestRoutes(captor.capture());
+        assertEquals("Truck A", captor.getValue().vehicles().getFirst().name());
+    }
+
+    @Test
+    void suggestRoutesTrimsVehicleName() {
+        when(routeOptimizationUseCase.suggestRoutes(any())).thenReturn(io.smallrye.mutiny.Uni.createFrom().item(suggestion()));
+        CollectorRouteResource.RouteOptimizationRequestDTO request = validRequest();
+        request.getVehicles().getFirst().setName("  Truck A  ");
+
+        Response response = resource.suggestRoutes(request).await().indefinitely();
+
+        assertEquals(200, response.getStatus());
+        ArgumentCaptor<RouteOptimizationCommand> captor = ArgumentCaptor.forClass(RouteOptimizationCommand.class);
+        verify(routeOptimizationUseCase).suggestRoutes(captor.capture());
+        assertEquals("Truck A", captor.getValue().vehicles().getFirst().name());
+    }
+
+    @Test
+    void suggestRoutesReturnsBadRequestForMissingVehicleName() {
+        CollectorRouteResource.RouteOptimizationRequestDTO request = validRequest();
+        request.getVehicles().getFirst().setName(null);
+
+        Response response = resource.suggestRoutes(request).await().indefinitely();
+
+        assertEquals(400, response.getStatus());
+        assertEquals("vehicle name is required", response.getEntity());
+        verify(routeOptimizationUseCase, never()).suggestRoutes(any());
+    }
+
+    @Test
+    void suggestRoutesReturnsBadRequestForBlankVehicleName() {
+        CollectorRouteResource.RouteOptimizationRequestDTO request = validRequest();
+        request.getVehicles().getFirst().setName("   ");
+
+        Response response = resource.suggestRoutes(request).await().indefinitely();
+
+        assertEquals(400, response.getStatus());
+        assertEquals("vehicle name is required", response.getEntity());
+        verify(routeOptimizationUseCase, never()).suggestRoutes(any());
+    }
+
+    @Test
+    void suggestRoutesReturnsBadRequestForTooLongVehicleName() {
+        CollectorRouteResource.RouteOptimizationRequestDTO request = validRequest();
+        request.getVehicles().getFirst().setName("a".repeat(81));
+
+        Response response = resource.suggestRoutes(request).await().indefinitely();
+
+        assertEquals(400, response.getStatus());
+        assertEquals("vehicle name must be at most 80 characters", response.getEntity());
+        verify(routeOptimizationUseCase, never()).suggestRoutes(any());
     }
 
     @Test
@@ -290,7 +346,7 @@ class CollectorRouteResourceTest {
         return new RouteOptimizationResult(
                 SolverStatus.FEASIBLE,
                 new SolverMetadata("TEST", 1, 10, 0),
-                List.of(new RoutePlan(0, 100.0, 25.0, 10, List.of(
+                List.of(new RoutePlan(0, "Truck A", 100.0, 25.0, 10, List.of(
                         new RouteStop(1, "request-1", "address-1", -23.0, -46.0, 25.0, 25.0, 10)
                 ))),
                 List.of()
@@ -301,6 +357,7 @@ class CollectorRouteResourceTest {
         CollectorRouteResource.RouteOptimizationRequestDTO request = new CollectorRouteResource.RouteOptimizationRequestDTO();
         request.setCollectorId("collector-1");
         CollectorRouteResource.RouteVehicleDTO vehicle = new CollectorRouteResource.RouteVehicleDTO();
+        vehicle.setName("Truck A");
         vehicle.setCapacity(100.0);
         request.setVehicles(List.of(vehicle));
         request.setCandidateRequestIds(List.of("request-1"));

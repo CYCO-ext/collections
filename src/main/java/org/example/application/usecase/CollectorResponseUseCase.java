@@ -23,6 +23,9 @@ public class CollectorResponseUseCase {
     @Inject
     EventPort eventPort;
 
+    @Inject
+    CollectionStatusNotificationUseCase notificationUseCase;
+
     public Uni<Void> acceptRequest(String requestId) {
         LOG.info("Collector accepting request: {}", requestId);
 
@@ -35,6 +38,7 @@ public class CollectorResponseUseCase {
                     request.setStatus(CollectionRequest.Status.IN_PROGRESS);
                     return collectionRequestPort.update(request)
                             .flatMap(it -> publishAcceptanceEvent(request))
+                            .flatMap(it -> notificationUseCase.notifyGenerator(request, "COLLECTION_ACCEPTED"))
                             .invoke(() -> LOG.info("Collection started for request: {}", requestId));
                 });
     }
@@ -51,6 +55,7 @@ public class CollectorResponseUseCase {
                     request.setSelectedCollectorId(null);
                     return collectionRequestPort.update(request)
                             .flatMap(it -> publishRejectionEvent(request))
+                            .flatMap(it -> notificationUseCase.notifyGenerator(request, "COLLECTION_REJECTED"))
                             .invoke(() -> LOG.info("Request rejected, available for other collectors: {}", requestId));
                 });
     }

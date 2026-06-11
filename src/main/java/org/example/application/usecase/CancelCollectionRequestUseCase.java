@@ -26,6 +26,9 @@ public class CancelCollectionRequestUseCase {
     @Inject
     EventPort eventPort;
 
+    @Inject
+    CollectionStatusNotificationUseCase notificationUseCase;
+
     public Uni<Void> cancelByGenerator(String requestId, String generatorId) {
         String normalizedRequestId = normalizeRequired(requestId, "request id is required");
         String normalizedGeneratorId = normalizeRequired(generatorId, "generator id is required");
@@ -49,6 +52,7 @@ public class CancelCollectionRequestUseCase {
                     request.setStatus(CollectionRequest.Status.CANCELLED);
                     return collectionRequestPort.update(request)
                             .flatMap(it -> publishCancellationEvent(request, actorType, actorId))
+                            .flatMap(it -> notificationUseCase.notifyGenerator(request, "COLLECTION_CANCELLED"))
                             .invoke(() -> LOG.info("Collection request cancelled: {} actorType={} actorId={}", requestId, actorType, actorId));
                 });
     }

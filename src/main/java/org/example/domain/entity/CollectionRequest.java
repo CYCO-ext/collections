@@ -7,7 +7,7 @@ import java.util.UUID;
 
 public class CollectionRequest {
     public enum Status {
-        PENDING, IN_PROGRESS, COMPLETED, REJECTED, CANCELLED
+        PENDING, IN_PROGRESS, ON_THE_WAY, COMPLETED, REJECTED, CANCELLED
     }
 
     private String id;
@@ -135,13 +135,13 @@ public class CollectionRequest {
     }
 
     public boolean canMarkCompleted() {
-        return Status.IN_PROGRESS.equals(status) &&
+        return (Status.IN_PROGRESS.equals(status) || Status.ON_THE_WAY.equals(status)) &&
                 Boolean.TRUE.equals(generatorConfirmed) &&
                 Boolean.TRUE.equals(collectorConfirmed);
     }
 
     public boolean canCancel() {
-        return Status.PENDING.equals(status) || Status.IN_PROGRESS.equals(status);
+        return Status.PENDING.equals(status) || Status.IN_PROGRESS.equals(status) || Status.ON_THE_WAY.equals(status);
     }
 
     @Override

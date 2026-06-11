@@ -31,11 +31,15 @@ class CancelCollectionRequestUseCaseTest {
     @Mock
     private EventPort eventPort;
 
+    @Mock
+    private CollectionStatusNotificationUseCase notificationUseCase;
+
     @BeforeEach
     void setUp() {
         useCase = new CancelCollectionRequestUseCase();
         useCase.collectionRequestPort = collectionRequestPort;
         useCase.eventPort = eventPort;
+        useCase.notificationUseCase = notificationUseCase;
     }
 
     @Test
@@ -44,6 +48,8 @@ class CancelCollectionRequestUseCaseTest {
         when(collectionRequestPort.findById("request-1")).thenReturn(Uni.createFrom().item(request));
         when(collectionRequestPort.update(request)).thenReturn(Uni.createFrom().voidItem());
         when(eventPort.publishCollectionEvent(org.mockito.ArgumentMatchers.any())).thenReturn(Uni.createFrom().voidItem());
+        when(notificationUseCase.notifyGenerator(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Uni.createFrom().voidItem());
 
         useCase.cancelByGenerator(" request-1 ", " generator-1 ").await().indefinitely();
 
@@ -64,6 +70,8 @@ class CancelCollectionRequestUseCaseTest {
         when(collectionRequestPort.findById("request-1")).thenReturn(Uni.createFrom().item(request));
         when(collectionRequestPort.update(request)).thenReturn(Uni.createFrom().voidItem());
         when(eventPort.publishCollectionEvent(org.mockito.ArgumentMatchers.any())).thenReturn(Uni.createFrom().voidItem());
+        when(notificationUseCase.notifyGenerator(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Uni.createFrom().voidItem());
 
         useCase.cancelByGenerator("request-1", "generator-1").await().indefinitely();
 
@@ -79,6 +87,8 @@ class CancelCollectionRequestUseCaseTest {
         when(collectionRequestPort.findById("request-1")).thenReturn(Uni.createFrom().item(request));
         when(collectionRequestPort.update(request)).thenReturn(Uni.createFrom().voidItem());
         when(eventPort.publishCollectionEvent(org.mockito.ArgumentMatchers.any())).thenReturn(Uni.createFrom().voidItem());
+        when(notificationUseCase.notifyGenerator(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Uni.createFrom().voidItem());
 
         useCase.cancelByCollector("request-1", "collector-1").await().indefinitely();
 
@@ -94,6 +104,8 @@ class CancelCollectionRequestUseCaseTest {
         when(collectionRequestPort.findById("request-1")).thenReturn(Uni.createFrom().item(request));
         when(collectionRequestPort.update(request)).thenReturn(Uni.createFrom().voidItem());
         when(eventPort.publishCollectionEvent(org.mockito.ArgumentMatchers.any())).thenReturn(Uni.createFrom().voidItem());
+        when(notificationUseCase.notifyGenerator(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Uni.createFrom().voidItem());
 
         useCase.cancelByCollector("request-1", "collector-1").await().indefinitely();
 

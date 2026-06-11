@@ -170,7 +170,7 @@ class GetSavedRouteMapUseCaseTest {
                 new RouteOptimizationResult(
                         SolverStatus.FEASIBLE,
                         new SolverMetadata("TEST", 1, 10, 0),
-                        List.of(new RoutePlan(0, 100.0, 20.0, 1000, stops)),
+                        List.of(new RoutePlan(0, "Truck A", 100.0, 20.0, 1000, stops)),
                         List.of()
                 ),
                 LocalDateTime.now(),

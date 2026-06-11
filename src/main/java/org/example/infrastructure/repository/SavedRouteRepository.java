@@ -184,6 +184,7 @@ public class SavedRouteRepository {
     private Document toRouteDocument(RoutePlan route) {
         return new Document()
                 .append("vehicleIndex", route.vehicleIndex())
+                .append("vehicleName", route.vehicleName())
                 .append("capacity", route.capacity())
                 .append("totalLoad", route.totalLoad())
                 .append("totalDistanceMeters", route.totalDistanceMeters())
@@ -193,6 +194,7 @@ public class SavedRouteRepository {
     private RoutePlan fromRouteDocument(Document doc) {
         return new RoutePlan(
                 number(doc.get("vehicleIndex")).intValue(),
+                doc.getString("vehicleName"),
                 number(doc.get("capacity")).doubleValue(),
                 number(doc.get("totalLoad")).doubleValue(),
                 number(doc.get("totalDistanceMeters")).longValue(),

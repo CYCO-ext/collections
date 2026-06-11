@@ -8,6 +8,7 @@ import org.example.domain.entity.CollectionRequest;
 import org.example.domain.entity.Collector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 
@@ -62,7 +63,7 @@ class RouteOptimizationUseCaseTest {
                 .thenReturn(new RouteOptimizationResult(
                         SolverStatus.FEASIBLE,
                         new SolverMetadata("TEST", 1, 10, 0),
-                        List.of(new RoutePlan(0, 20.0, 10.0, 10, List.of())),
+                        List.of(new RoutePlan(0, "Truck A", 20.0, 10.0, 10, List.of())),
                         List.of()
                 ));
 
@@ -76,6 +77,102 @@ class RouteOptimizationUseCaseTest {
         assertEquals(CollectionRequest.Status.IN_PROGRESS, routable.getStatus());
         assertEquals(CollectionRequest.Status.IN_PROGRESS, missingCoordinates.getStatus());
         verify(routeOptimizationPort).optimize(any(RouteOptimizationProblem.class));
+    }
+
+    @Test
+    void suggestRoutesReportsExplicitCandidateIdsNotFound() {
+        Address collectorAddress = address("collector-address", -23.5505, -46.6333);
+        Collector collector = new Collector("collector-1", "user-1", "Collector", collectorAddress, List.of("paper"), 1.0);
+        CollectionRequest first = request("request-1", "address-1", CollectionRequest.Status.IN_PROGRESS, List.of("paper"), 10.0);
+        CollectionRequest second = request("request-2", "address-2", CollectionRequest.Status.IN_PROGRESS, List.of("paper"), 10.0);
+
+        when(collectorDiscoveryPort.findCollectorById("collector-1")).thenReturn(Uni.createFrom().item(collector));
+        when(collectionRequestPort.findByIds(List.of("request-1", "request-2", "missing-request")))
+                .thenReturn(Uni.createFrom().item(List.of(first, second)));
+        when(addressPort.findById("address-1")).thenReturn(Uni.createFrom().item(address("address-1", -23.5605, -46.6433)));
+        when(addressPort.findById("address-2")).thenReturn(Uni.createFrom().item(address("address-2", -23.5705, -46.6533)));
+        when(distanceMatrixPort.buildMatrixMeters(any(), any())).thenReturn(new long[][]{{0, 10, 20}, {10, 0, 10}, {20, 10, 0}});
+        when(routeOptimizationPort.optimize(any(RouteOptimizationProblem.class)))
+                .thenReturn(new RouteOptimizationResult(
+                        SolverStatus.FEASIBLE,
+                        new SolverMetadata("TEST", 1, 20, 0),
+                        List.of(new RoutePlan(0, "Truck A", 20.0, 20.0, 20, List.of(
+                                new RouteStop(1, "request-1", "address-1", -23.5605, -46.6433, 10.0, 10.0, 10),
+                                new RouteStop(2, "request-2", "address-2", -23.5705, -46.6533, 10.0, 20.0, 10)
+                        ))),
+                        List.of()
+                ));
+
+        RouteOptimizationResult result = useCase.suggestRoutes(command(List.of("request-1", "request-2", "missing-request"), 20.0))
+                .await().indefinitely();
+
+        assertEquals(SolverStatus.PARTIAL, result.status());
+        assertEquals(1, result.unassigned().size());
+        assertEquals("missing-request", result.unassigned().getFirst().collectionRequestId());
+        assertEquals(UnassignedReason.NOT_FOUND, result.unassigned().getFirst().reason());
+    }
+
+    @Test
+    void suggestRoutesAddsReasonForSolverMissingRoutableStop() {
+        Address collectorAddress = address("collector-address", -23.5505, -46.6333);
+        Collector collector = new Collector("collector-1", "user-1", "Collector", collectorAddress, List.of("paper"), 1.0);
+        CollectionRequest first = request("request-1", "address-1", CollectionRequest.Status.IN_PROGRESS, List.of("paper"), 10.0);
+        CollectionRequest second = request("request-2", "address-2", CollectionRequest.Status.IN_PROGRESS, List.of("paper"), 10.0);
+
+        when(collectorDiscoveryPort.findCollectorById("collector-1")).thenReturn(Uni.createFrom().item(collector));
+        when(collectionRequestPort.findByIds(List.of("request-1", "request-2"))).thenReturn(Uni.createFrom().item(List.of(first, second)));
+        when(addressPort.findById("address-1")).thenReturn(Uni.createFrom().item(address("address-1", -23.5605, -46.6433)));
+        when(addressPort.findById("address-2")).thenReturn(Uni.createFrom().item(address("address-2", -23.5705, -46.6533)));
+        when(distanceMatrixPort.buildMatrixMeters(any(), any())).thenReturn(new long[][]{{0, 10, 20}, {10, 0, 10}, {20, 10, 0}});
+        when(routeOptimizationPort.optimize(any(RouteOptimizationProblem.class)))
+                .thenReturn(new RouteOptimizationResult(
+                        SolverStatus.FEASIBLE,
+                        new SolverMetadata("TEST", 1, 20, 0),
+                        List.of(new RoutePlan(0, "Truck A", 20.0, 10.0, 10, List.of(
+                                new RouteStop(1, "request-1", "address-1", -23.5605, -46.6433, 10.0, 10.0, 10)
+                        ))),
+                        List.of()
+                ));
+
+        RouteOptimizationResult result = useCase.suggestRoutes(command(List.of("request-1", "request-2"), 20.0))
+                .await().indefinitely();
+
+        assertEquals(SolverStatus.PARTIAL, result.status());
+        assertEquals(1, result.unassigned().size());
+        assertEquals("request-2", result.unassigned().getFirst().collectionRequestId());
+        assertEquals(UnassignedReason.SOLVER_DROPPED, result.unassigned().getFirst().reason());
+    }
+
+    @Test
+    void suggestRoutesRaisesDropPenaltyAboveSequentialRouteCost() {
+        Address collectorAddress = address("collector-address", -23.5505, -46.6333);
+        Collector collector = new Collector("collector-1", "user-1", "Collector", collectorAddress, List.of("paper"), 1.0);
+        CollectionRequest first = request("request-1", "address-1", CollectionRequest.Status.IN_PROGRESS, List.of("paper"), 10.0);
+        CollectionRequest second = request("request-2", "address-2", CollectionRequest.Status.IN_PROGRESS, List.of("paper"), 10.0);
+
+        when(collectorDiscoveryPort.findCollectorById("collector-1")).thenReturn(Uni.createFrom().item(collector));
+        when(collectionRequestPort.findByIds(List.of("request-1", "request-2"))).thenReturn(Uni.createFrom().item(List.of(first, second)));
+        when(addressPort.findById("address-1")).thenReturn(Uni.createFrom().item(address("address-1", -23.5605, -46.6433)));
+        when(addressPort.findById("address-2")).thenReturn(Uni.createFrom().item(address("address-2", -23.5705, -46.6533)));
+        when(distanceMatrixPort.buildMatrixMeters(any(), any())).thenReturn(new long[][]{
+                {0, 300, 400},
+                {300, 0, 500},
+                {400, 500, 0}
+        });
+        when(routeOptimizationPort.optimize(any(RouteOptimizationProblem.class)))
+                .thenReturn(new RouteOptimizationResult(
+                        SolverStatus.FEASIBLE,
+                        new SolverMetadata("TEST", 1, 800, 0),
+                        List.of(new RoutePlan(0, "Truck A", 20.0, 20.0, 800, List.of())),
+                        List.of()
+                ));
+
+        useCase.suggestRoutes(command(List.of("request-1", "request-2"), 20.0, new RouteOptions(5, true, 1L)))
+                .await().indefinitely();
+
+        ArgumentCaptor<RouteOptimizationProblem> captor = ArgumentCaptor.forClass(RouteOptimizationProblem.class);
+        verify(routeOptimizationPort).optimize(captor.capture());
+        assertEquals(1201L, captor.getValue().dropPenalty());
     }
 
     @Test
@@ -115,14 +212,18 @@ class RouteOptimizationUseCaseTest {
     }
 
     private RouteOptimizationCommand command(List<String> candidateIds, double capacity) {
+        return command(candidateIds, capacity, new RouteOptions(5, false, null));
+    }
+
+    private RouteOptimizationCommand command(List<String> candidateIds, double capacity, RouteOptions options) {
         return new RouteOptimizationCommand(
                 "collector-1",
-                List.of(new RouteVehicle(0, capacity)),
+                List.of(new RouteVehicle(0, "Truck A", capacity)),
                 new StartLocation(StartLocationType.COLLECTOR_ADDRESS, null, null, null),
                 true,
                 candidateIds,
                 null,
-                new RouteOptions(5, false, null)
+                options
         );
     }
 

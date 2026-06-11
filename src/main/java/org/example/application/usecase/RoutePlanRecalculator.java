@@ -43,6 +43,7 @@ public class RoutePlanRecalculator {
 
         return new RoutePlan(
                 original.vehicleIndex(),
+                original.vehicleName(),
                 original.capacity(),
                 totalLoad,
                 totalDistance,

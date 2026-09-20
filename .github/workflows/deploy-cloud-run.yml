@@ -82,4 +82,4 @@ jobs:
             --image "$IMAGE" \
             --platform managed \
             --allow-unauthenticated \
-            --update-env-vars "PORT=8080,FIREBASE_ENABLED=true,FIREBASE_CREDENTIALS_PATH=/app/credentials.json,FIREBASE_PROJECT_ID=${GCP_PROJECT_ID},KAFKA_SSL_TRUSTSTORE_LOCATION=/app/ca.pem"
+            --update-env-vars "FIREBASE_ENABLED=true,FIREBASE_CREDENTIALS_PATH=/app/credentials.json,FIREBASE_PROJECT_ID=${GCP_PROJECT_ID},KAFKA_SSL_TRUSTSTORE_LOCATION=/app/ca.pem"

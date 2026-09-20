@@ -5,10 +5,14 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.example.application.deliveryman.DeliverymanModels.AssignDeliveryRouteCommand;
 import org.example.application.deliveryman.DeliverymanModels.DeliveryRouteAssignment;
+import org.example.application.deliveryman.DeliverymanModels.DeliveryRouteLog;
+import org.example.application.deliveryman.DeliverymanModels.FailStopCommand;
 import org.example.application.deliveryman.DeliverymanModels.DeliverymanProfile;
+import org.example.application.deliveryman.DeliverymanModels.RouteLogEventType;
 import org.example.application.deliveryman.DeliverymanModels.RouteAssignmentStatus;
 import org.example.application.deliveryman.DeliverymanModels.SyncDeliverymanCommand;
 import org.example.application.port.out.DeliveryRouteAssignmentPort;
+import org.example.application.port.out.DeliveryRouteLogPort;
 import org.example.application.port.out.DeliverymanDirectoryPort;
 import org.example.application.port.out.DeliverymanPort;
 import org.example.application.port.out.SavedRoutePort;
@@ -30,6 +34,9 @@ public class DeliverymanUseCase {
 
     @Inject
     DeliveryRouteAssignmentPort assignmentPort;
+
+    @Inject
+    DeliveryRouteLogPort routeLogPort;
 
     @Inject
     SavedRoutePort savedRoutePort;
@@ -128,8 +135,12 @@ public class DeliverymanUseCase {
     public Uni<DeliveryRouteAssignment> startAssignment(String deliverymanId, String assignmentId) {
         return loadAssignmentForDeliveryman(deliverymanId, assignmentId)
                 .flatMap(assignment -> {
-                    DeliveryRouteAssignment started = assignment.start(LocalDateTime.now());
-                    return assignmentPort.update(started).replaceWith(started);
+                    LocalDateTime now = LocalDateTime.now();
+                    DeliveryRouteAssignment started = assignment.start(now);
+                    DeliveryRouteLog log = DeliveryRouteLog.create(started, null, RouteLogEventType.ROUTE_STARTED, null, null, now);
+                    return assignmentPort.update(started)
+                            .flatMap(it -> routeLogPort.append(log))
+                            .replaceWith(started);
                 });
     }
 
@@ -140,14 +151,79 @@ public class DeliverymanUseCase {
                     if (!assignment.assignedCollectionRequestIds().contains(collectionRequestId)) {
                         return Uni.createFrom().failure(new IllegalStateException("Collection request is not assigned to deliveryman"));
                     }
+                    LocalDateTime now = LocalDateTime.now();
                     DeliveryRouteAssignment current = assignment.status() == RouteAssignmentStatus.ASSIGNED
-                            ? assignment.start(LocalDateTime.now())
+                            ? assignment.start(now)
                             : assignment;
-                    DeliveryRouteAssignment updated = current.completeStop(collectionRequestId, LocalDateTime.now());
+                    DeliveryRouteAssignment updated = current.completeStop(collectionRequestId, now);
+                    DeliveryRouteLog log = DeliveryRouteLog.create(updated, collectionRequestId, RouteLogEventType.STOP_COMPLETED, null, null, now);
                     return assignmentPort.update(updated)
+                            .flatMap(it -> routeLogPort.append(log))
                             .flatMap(it -> completionUseCase.confirmCollectorCompletion(collectionRequestId))
                             .replaceWith(updated);
                 });
+    }
+
+    public Uni<DeliveryRouteAssignment> failAssignedStop(String deliverymanId, String assignmentId, String collectionRequestId, FailStopCommand command) {
+        validateRequired(collectionRequestId, "collectionRequestId");
+        validateRequired(command == null ? null : command.failureReason(), "failureReason");
+        return loadAssignmentForDeliveryman(deliverymanId, assignmentId)
+                .flatMap(assignment -> {
+                    if (!assignment.assignedCollectionRequestIds().contains(collectionRequestId)) {
+                        return Uni.createFrom().failure(new IllegalStateException("Collection request is not assigned to deliveryman"));
+                    }
+                    LocalDateTime now = LocalDateTime.now();
+                    DeliveryRouteAssignment current = assignment.status() == RouteAssignmentStatus.ASSIGNED
+                            ? assignment.start(now)
+                            : assignment;
+                    DeliveryRouteLog log = DeliveryRouteLog.create(
+                            current,
+                            collectionRequestId,
+                            RouteLogEventType.STOP_FAILED,
+                            command.note(),
+                            command.failureReason(),
+                            now
+                    );
+                    return assignmentPort.update(current)
+                            .flatMap(it -> routeLogPort.append(log))
+                            .replaceWith(current);
+                });
+    }
+
+    public Uni<DeliveryRouteAssignment> finishAssignment(String deliverymanId, String assignmentId) {
+        return loadAssignmentForDeliveryman(deliverymanId, assignmentId)
+                .flatMap(assignment -> routeLogPort.findBySavedRouteIdAndVehicleIndex(assignment.savedRouteId(), assignment.vehicleIndex())
+                        .flatMap(logs -> {
+                            long completed = logs.stream()
+                                    .filter(log -> log.eventType() == RouteLogEventType.STOP_COMPLETED)
+                                    .map(DeliveryRouteLog::collectionRequestId)
+                                    .distinct()
+                                    .count();
+                            long failed = logs.stream()
+                                    .filter(log -> log.eventType() == RouteLogEventType.STOP_FAILED)
+                                    .map(DeliveryRouteLog::collectionRequestId)
+                                    .distinct()
+                                    .count();
+                            int assigned = assignment.assignedCollectionRequestIds().size();
+                            RouteAssignmentStatus outcome;
+                            RouteLogEventType eventType;
+                            if (assigned > 0 && completed == assigned) {
+                                outcome = RouteAssignmentStatus.COMPLETED;
+                                eventType = RouteLogEventType.ROUTE_COMPLETED;
+                            } else if (assigned > 0 && failed == assigned) {
+                                outcome = RouteAssignmentStatus.FAILED;
+                                eventType = RouteLogEventType.ROUTE_FAILED;
+                            } else {
+                                outcome = RouteAssignmentStatus.PARTIALLY_COMPLETED;
+                                eventType = RouteLogEventType.ROUTE_COMPLETED;
+                            }
+                            LocalDateTime now = LocalDateTime.now();
+                            DeliveryRouteAssignment finished = assignment.finish(outcome, now);
+                            DeliveryRouteLog log = DeliveryRouteLog.create(finished, null, eventType, null, null, now);
+                            return assignmentPort.update(finished)
+                                    .flatMap(it -> routeLogPort.append(log))
+                                    .replaceWith(finished);
+                        }));
     }
 
     private Uni<DeliveryRouteAssignment> loadAssignmentForDeliveryman(String deliverymanId, String assignmentId) {
@@ -159,7 +235,10 @@ public class DeliverymanUseCase {
                     if (!Objects.equals(assignment.deliverymanId(), deliverymanId)) {
                         return Uni.createFrom().failure(new IllegalStateException("Assignment does not belong to deliveryman"));
                     }
-                    if (assignment.status() == RouteAssignmentStatus.COMPLETED || assignment.status() == RouteAssignmentStatus.CANCELLED) {
+                    if (assignment.status() == RouteAssignmentStatus.COMPLETED
+                            || assignment.status() == RouteAssignmentStatus.PARTIALLY_COMPLETED
+                            || assignment.status() == RouteAssignmentStatus.FAILED
+                            || assignment.status() == RouteAssignmentStatus.CANCELLED) {
                         return Uni.createFrom().failure(new IllegalStateException("Assignment is not active"));
                     }
                     return Uni.createFrom().item(assignment);

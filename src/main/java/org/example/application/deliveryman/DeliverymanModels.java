@@ -17,6 +17,49 @@ public final class DeliverymanModels {
         CANCELLED
     }
 
+    public enum RouteLogEventType {
+        ROUTE_STARTED,
+        STOP_COMPLETED,
+        STOP_FAILED,
+        ROUTE_COMPLETED,
+        ROUTE_FAILED
+    }
+
+    public record DeliveryRouteLog(
+            String id,
+            String savedRouteId,
+            int vehicleIndex,
+            String collectorId,
+            String deliverymanId,
+            String collectionRequestId,
+            RouteLogEventType eventType,
+            String note,
+            String failureReason,
+            LocalDateTime createdAt
+    ) {
+        public static DeliveryRouteLog create(
+                DeliveryRouteAssignment assignment,
+                String collectionRequestId,
+                RouteLogEventType eventType,
+                String note,
+                String failureReason,
+                LocalDateTime now
+        ) {
+            return new DeliveryRouteLog(
+                    UUID.randomUUID().toString(),
+                    assignment.savedRouteId(),
+                    assignment.vehicleIndex(),
+                    assignment.collectorId(),
+                    assignment.deliverymanId(),
+                    collectionRequestId,
+                    eventType,
+                    note,
+                    failureReason,
+                    now
+            );
+        }
+    }
+
     public record DeliverymanProfile(
             String id,
             String collectorId,
@@ -105,9 +148,23 @@ public final class DeliverymanModels {
                     nextStatus, assignedCollectionRequestIds, nextCompleted, assignedAt, startedAt,
                     nextStatus == RouteAssignmentStatus.COMPLETED ? now : completedAt, now);
         }
+
+        public DeliveryRouteAssignment finish(RouteAssignmentStatus outcome, LocalDateTime now) {
+            if (outcome != RouteAssignmentStatus.COMPLETED
+                    && outcome != RouteAssignmentStatus.PARTIALLY_COMPLETED
+                    && outcome != RouteAssignmentStatus.FAILED) {
+                throw new IllegalArgumentException("finish outcome must be terminal");
+            }
+            return new DeliveryRouteAssignment(id, collectorId, deliverymanId, savedRouteId, vehicleIndex,
+                    outcome, assignedCollectionRequestIds, completedCollectionRequestIds,
+                    assignedAt, startedAt, now, now);
+        }
     }
 
     public record AssignDeliveryRouteCommand(String collectorId, String deliverymanId, String savedRouteId, Integer vehicleIndex) {
+    }
+
+    public record FailStopCommand(String failureReason, String note) {
     }
 
     public record SyncDeliverymanCommand(

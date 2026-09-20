@@ -11,6 +11,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.example.application.deliveryman.DeliverymanModels.AssignDeliveryRouteCommand;
+import org.example.application.deliveryman.DeliverymanModels.FailStopCommand;
 import org.example.application.deliveryman.DeliverymanModels.SyncDeliverymanCommand;
 import org.example.application.usecase.DeliverymanUseCase;
 import org.slf4j.Logger;
@@ -119,6 +120,42 @@ public class DeliverymanResource {
                 .onFailure(IllegalStateException.class).recoverWithItem(ex -> Response.status(Response.Status.CONFLICT).entity(ex.getMessage()).build())
                 .onFailure().recoverWithItem(ex -> {
                     LOG.error("Error completing delivery stop", ex);
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
+                });
+    }
+
+    @POST
+    @Path("/deliverymen/{deliverymanId}/assignments/{assignmentId}/stops/{collectionRequestId}/fail")
+    public Uni<Response> failStop(
+            @PathParam("deliverymanId") String deliverymanId,
+            @PathParam("assignmentId") String assignmentId,
+            @PathParam("collectionRequestId") String collectionRequestId,
+            FailStopCommand command
+    ) {
+        LOG.info("POST /deliverymen/{}/assignments/{}/stops/{}/fail", deliverymanId, assignmentId, collectionRequestId);
+        return deliverymanUseCase.failAssignedStop(deliverymanId, assignmentId, collectionRequestId, command)
+                .onItem().transform(result -> Response.ok(result).build())
+                .onFailure(IllegalArgumentException.class).recoverWithItem(ex -> Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build())
+                .onFailure(IllegalStateException.class).recoverWithItem(ex -> Response.status(Response.Status.CONFLICT).entity(ex.getMessage()).build())
+                .onFailure().recoverWithItem(ex -> {
+                    LOG.error("Error failing delivery stop", ex);
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
+                });
+    }
+
+    @POST
+    @Path("/deliverymen/{deliverymanId}/assignments/{assignmentId}/finish")
+    public Uni<Response> finishAssignment(
+            @PathParam("deliverymanId") String deliverymanId,
+            @PathParam("assignmentId") String assignmentId
+    ) {
+        LOG.info("POST /deliverymen/{}/assignments/{}/finish", deliverymanId, assignmentId);
+        return deliverymanUseCase.finishAssignment(deliverymanId, assignmentId)
+                .onItem().transform(result -> Response.ok(result).build())
+                .onFailure(IllegalArgumentException.class).recoverWithItem(ex -> Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build())
+                .onFailure(IllegalStateException.class).recoverWithItem(ex -> Response.status(Response.Status.CONFLICT).entity(ex.getMessage()).build())
+                .onFailure().recoverWithItem(ex -> {
+                    LOG.error("Error finishing delivery assignment", ex);
                     return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
                 });
     }

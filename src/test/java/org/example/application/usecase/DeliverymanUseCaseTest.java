@@ -3,8 +3,12 @@ package org.example.application.usecase;
 import io.smallrye.mutiny.Uni;
 import org.example.application.deliveryman.DeliverymanModels.AssignDeliveryRouteCommand;
 import org.example.application.deliveryman.DeliverymanModels.DeliveryRouteAssignment;
+import org.example.application.deliveryman.DeliverymanModels.DeliveryRouteLog;
+import org.example.application.deliveryman.DeliverymanModels.FailStopCommand;
 import org.example.application.deliveryman.DeliverymanModels.RouteAssignmentStatus;
+import org.example.application.deliveryman.DeliverymanModels.RouteLogEventType;
 import org.example.application.port.out.DeliveryRouteAssignmentPort;
+import org.example.application.port.out.DeliveryRouteLogPort;
 import org.example.application.port.out.DeliverymanDirectoryPort;
 import org.example.application.port.out.DeliverymanDirectoryPort.DeliverymanRef;
 import org.example.application.port.out.DeliverymanPort;
@@ -47,7 +51,13 @@ class DeliverymanUseCaseTest {
     DeliveryRouteAssignmentPort assignmentPort;
 
     @Mock
+    DeliveryRouteLogPort routeLogPort;
+
+    @Mock
     SavedRoutePort savedRoutePort;
+
+    @Mock
+    CompletionUseCase completionUseCase;
 
     @BeforeEach
     void setUp() {
@@ -55,7 +65,9 @@ class DeliverymanUseCaseTest {
         useCase.deliverymanPort = deliverymanPort;
         useCase.deliverymanDirectoryPort = deliverymanDirectoryPort;
         useCase.assignmentPort = assignmentPort;
+        useCase.routeLogPort = routeLogPort;
         useCase.savedRoutePort = savedRoutePort;
+        useCase.completionUseCase = completionUseCase;
     }
 
     @Test
@@ -132,8 +144,105 @@ class DeliverymanUseCaseTest {
         verify(assignmentPort, never()).save(any());
     }
 
+    @Test
+    void startAssignmentTransitionsToInProgressAndAppendsRouteStartedLog() {
+        DeliveryRouteAssignment assignment = assignment(RouteAssignmentStatus.ASSIGNED, List.of());
+        when(assignmentPort.findById("assignment-1")).thenReturn(Uni.createFrom().item(assignment));
+        when(assignmentPort.update(any())).thenReturn(Uni.createFrom().voidItem());
+        when(routeLogPort.append(any())).thenReturn(Uni.createFrom().voidItem());
+
+        DeliveryRouteAssignment result = useCase.startAssignment("deliveryman-1", "assignment-1").await().indefinitely();
+
+        assertEquals(RouteAssignmentStatus.IN_PROGRESS, result.status());
+        ArgumentCaptor<DeliveryRouteLog> captor = ArgumentCaptor.forClass(DeliveryRouteLog.class);
+        verify(routeLogPort).append(captor.capture());
+        assertEquals(RouteLogEventType.ROUTE_STARTED, captor.getValue().eventType());
+        assertEquals("saved-1", captor.getValue().savedRouteId());
+    }
+
+    @Test
+    void completeAssignedStopAppendsLogAndUsesExistingCompletionRule() {
+        DeliveryRouteAssignment assignment = assignment(RouteAssignmentStatus.IN_PROGRESS, List.of());
+        when(assignmentPort.findById("assignment-1")).thenReturn(Uni.createFrom().item(assignment));
+        when(assignmentPort.update(any())).thenReturn(Uni.createFrom().voidItem());
+        when(routeLogPort.append(any())).thenReturn(Uni.createFrom().voidItem());
+        when(completionUseCase.confirmCollectorCompletion("request-1")).thenReturn(Uni.createFrom().voidItem());
+
+        DeliveryRouteAssignment result = useCase.completeAssignedStop("deliveryman-1", "assignment-1", "request-1").await().indefinitely();
+
+        assertEquals(List.of("request-1"), result.completedCollectionRequestIds());
+        ArgumentCaptor<DeliveryRouteLog> captor = ArgumentCaptor.forClass(DeliveryRouteLog.class);
+        verify(routeLogPort).append(captor.capture());
+        assertEquals(RouteLogEventType.STOP_COMPLETED, captor.getValue().eventType());
+        assertEquals("request-1", captor.getValue().collectionRequestId());
+        verify(completionUseCase).confirmCollectorCompletion("request-1");
+    }
+
+    @Test
+    void failAssignedStopAppendsFailureLogAndDoesNotCompleteRequest() {
+        DeliveryRouteAssignment assignment = assignment(RouteAssignmentStatus.IN_PROGRESS, List.of());
+        when(assignmentPort.findById("assignment-1")).thenReturn(Uni.createFrom().item(assignment));
+        when(assignmentPort.update(any())).thenReturn(Uni.createFrom().voidItem());
+        when(routeLogPort.append(any())).thenReturn(Uni.createFrom().voidItem());
+
+        DeliveryRouteAssignment result = useCase.failAssignedStop(
+                "deliveryman-1",
+                "assignment-1",
+                "request-1",
+                new FailStopCommand("Generator unavailable", "No one home")
+        ).await().indefinitely();
+
+        assertEquals(List.of(), result.completedCollectionRequestIds());
+        ArgumentCaptor<DeliveryRouteLog> captor = ArgumentCaptor.forClass(DeliveryRouteLog.class);
+        verify(routeLogPort).append(captor.capture());
+        assertEquals(RouteLogEventType.STOP_FAILED, captor.getValue().eventType());
+        assertEquals("Generator unavailable", captor.getValue().failureReason());
+        verify(completionUseCase, never()).confirmCollectorCompletion(any());
+    }
+
+    @Test
+    void finishAssignmentMarksPartiallyCompletedFromMixedStopLogs() {
+        DeliveryRouteAssignment assignment = assignment(RouteAssignmentStatus.IN_PROGRESS, List.of("request-1"));
+        when(assignmentPort.findById("assignment-1")).thenReturn(Uni.createFrom().item(assignment));
+        when(routeLogPort.findBySavedRouteIdAndVehicleIndex("saved-1", 0)).thenReturn(Uni.createFrom().item(List.of(
+                log("request-1", RouteLogEventType.STOP_COMPLETED),
+                log("request-2", RouteLogEventType.STOP_FAILED)
+        )));
+        when(assignmentPort.update(any())).thenReturn(Uni.createFrom().voidItem());
+        when(routeLogPort.append(any())).thenReturn(Uni.createFrom().voidItem());
+
+        DeliveryRouteAssignment result = useCase.finishAssignment("deliveryman-1", "assignment-1").await().indefinitely();
+
+        assertEquals(RouteAssignmentStatus.PARTIALLY_COMPLETED, result.status());
+        ArgumentCaptor<DeliveryRouteLog> captor = ArgumentCaptor.forClass(DeliveryRouteLog.class);
+        verify(routeLogPort).append(captor.capture());
+        assertEquals(RouteLogEventType.ROUTE_COMPLETED, captor.getValue().eventType());
+    }
+
     private AssignDeliveryRouteCommand command() {
         return new AssignDeliveryRouteCommand("collector-1", "deliveryman-1", "saved-1", 0);
+    }
+
+    private DeliveryRouteAssignment assignment(RouteAssignmentStatus status, List<String> completedIds) {
+        LocalDateTime now = LocalDateTime.now();
+        return new DeliveryRouteAssignment(
+                "assignment-1",
+                "collector-1",
+                "deliveryman-1",
+                "saved-1",
+                0,
+                status,
+                List.of("request-1", "request-2"),
+                completedIds,
+                now,
+                status == RouteAssignmentStatus.ASSIGNED ? null : now,
+                null,
+                now
+        );
+    }
+
+    private DeliveryRouteLog log(String requestId, RouteLogEventType eventType) {
+        return DeliveryRouteLog.create(assignment(RouteAssignmentStatus.IN_PROGRESS, List.of()), requestId, eventType, null, null, LocalDateTime.now());
     }
 
     private SavedRouteSuggestion savedRoute(SavedRouteStatus status) {

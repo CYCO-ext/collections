@@ -108,7 +108,11 @@ public class DeliverymanUseCase {
                                 return assignmentPort.findOpenBySavedRouteIdAndVehicleIndex(command.savedRouteId(), vehicleIndex)
                                         .flatMap(existing -> {
                                             if (existing != null) {
-                                                return Uni.createFrom().failure(new IllegalStateException("Saved route vehicle already assigned"));
+                                                if (Objects.equals(existing.deliverymanId(), command.deliverymanId())) {
+                                                    return Uni.createFrom().item(existing);
+                                                }
+                                                DeliveryRouteAssignment reassigned = existing.reassign(command.deliverymanId(), LocalDateTime.now());
+                                                return assignmentPort.update(reassigned).replaceWith(reassigned);
                                             }
                                             DeliveryRouteAssignment assignment = DeliveryRouteAssignment.create(
                                                     command.collectorId(),

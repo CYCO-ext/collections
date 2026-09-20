@@ -93,6 +93,62 @@ class DeliverymanUseCaseTest {
     }
 
     @Test
+    void assignRouteReturnsExistingAssignmentWhenAlreadyAssignedToSameDeliveryman() {
+        DeliveryRouteAssignment existing = assignment(RouteAssignmentStatus.ASSIGNED, List.of());
+        when(savedRoutePort.findById("saved-1")).thenReturn(Uni.createFrom().item(savedRoute(SavedRouteStatus.OPEN)));
+        when(deliverymanDirectoryPort.findById("deliveryman-1")).thenReturn(Uni.createFrom().item(
+                new DeliverymanRef("deliveryman-1", "collector-1", "Driver One", true)
+        ));
+        when(assignmentPort.findOpenBySavedRouteIdAndVehicleIndex("saved-1", 0)).thenReturn(Uni.createFrom().item(existing));
+
+        DeliveryRouteAssignment result = useCase.assignRoute(command()).await().indefinitely();
+
+        assertEquals(existing, result);
+        verify(assignmentPort, never()).save(any());
+        verify(assignmentPort, never()).update(any());
+    }
+
+    @Test
+    void assignRouteReassignsExistingAssignmentBeforeRouteStarts() {
+        DeliveryRouteAssignment existing = assignment(RouteAssignmentStatus.ASSIGNED, List.of());
+        when(savedRoutePort.findById("saved-1")).thenReturn(Uni.createFrom().item(savedRoute(SavedRouteStatus.OPEN)));
+        when(deliverymanDirectoryPort.findById("deliveryman-2")).thenReturn(Uni.createFrom().item(
+                new DeliverymanRef("deliveryman-2", "collector-1", "Driver Two", true)
+        ));
+        when(assignmentPort.findOpenBySavedRouteIdAndVehicleIndex("saved-1", 0)).thenReturn(Uni.createFrom().item(existing));
+        when(assignmentPort.update(any())).thenReturn(Uni.createFrom().voidItem());
+
+        DeliveryRouteAssignment result = useCase.assignRoute(
+                new AssignDeliveryRouteCommand("collector-1", "deliveryman-2", "saved-1", 0)
+        ).await().indefinitely();
+
+        assertEquals("assignment-1", result.id());
+        assertEquals("deliveryman-2", result.deliverymanId());
+        assertEquals(RouteAssignmentStatus.ASSIGNED, result.status());
+        verify(assignmentPort, never()).save(any());
+        verify(assignmentPort).update(any());
+    }
+
+    @Test
+    void assignRouteRejectsReassignmentAfterRouteStarts() {
+        DeliveryRouteAssignment existing = assignment(RouteAssignmentStatus.IN_PROGRESS, List.of());
+        when(savedRoutePort.findById("saved-1")).thenReturn(Uni.createFrom().item(savedRoute(SavedRouteStatus.OPEN)));
+        when(deliverymanDirectoryPort.findById("deliveryman-2")).thenReturn(Uni.createFrom().item(
+                new DeliverymanRef("deliveryman-2", "collector-1", "Driver Two", true)
+        ));
+        when(assignmentPort.findOpenBySavedRouteIdAndVehicleIndex("saved-1", 0)).thenReturn(Uni.createFrom().item(existing));
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> useCase.assignRoute(
+                        new AssignDeliveryRouteCommand("collector-1", "deliveryman-2", "saved-1", 0)
+                ).await().indefinitely());
+
+        assertEquals("Assignment already started", exception.getMessage());
+        verify(assignmentPort, never()).save(any());
+        verify(assignmentPort, never()).update(any());
+    }
+
+    @Test
     void assignRouteRejectsDeliverymanFromAnotherCollector() {
         when(savedRoutePort.findById("saved-1")).thenReturn(Uni.createFrom().item(savedRoute(SavedRouteStatus.OPEN)));
         when(deliverymanDirectoryPort.findById("deliveryman-1")).thenReturn(Uni.createFrom().item(

@@ -159,6 +159,15 @@ public final class DeliverymanModels {
                     outcome, assignedCollectionRequestIds, completedCollectionRequestIds,
                     assignedAt, startedAt, now, now);
         }
+
+        public DeliveryRouteAssignment reassign(String nextDeliverymanId, LocalDateTime now) {
+            if (status != RouteAssignmentStatus.ASSIGNED) {
+                throw new IllegalStateException("Assignment already started");
+            }
+            return new DeliveryRouteAssignment(id, collectorId, nextDeliverymanId, savedRouteId, vehicleIndex,
+                    status, assignedCollectionRequestIds, completedCollectionRequestIds,
+                    assignedAt, startedAt, completedAt, now);
+        }
     }
 
     public record AssignDeliveryRouteCommand(String collectorId, String deliverymanId, String savedRouteId, Integer vehicleIndex) {

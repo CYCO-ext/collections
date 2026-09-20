@@ -1,0 +1,84 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ vars.GCP_REGION }}
+  GAR_LOCATION: ${{ vars.GAR_LOCATION }}
+  GAR_REPOSITORY: ${{ vars.GAR_REPOSITORY }}
+  CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+  FIREBASE_CREDENTIALS_FILE: cyco-collection-firebase-adminsdk-fbsvc-50baaa2af1.json
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required configuration
+        env:
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          CA_PEM: ${{ secrets.CA_PEM }}
+          FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+        run: |
+          test -n "$GCP_PROJECT_ID" || (echo "Missing repository variable GCP_PROJECT_ID" && exit 1)
+          test -n "$GCP_REGION" || (echo "Missing repository variable GCP_REGION" && exit 1)
+          test -n "$GAR_LOCATION" || (echo "Missing repository variable GAR_LOCATION" && exit 1)
+          test -n "$GAR_REPOSITORY" || (echo "Missing repository variable GAR_REPOSITORY" && exit 1)
+          test -n "$CLOUD_RUN_SERVICE" || (echo "Missing repository variable CLOUD_RUN_SERVICE" && exit 1)
+          test -n "$GCP_WORKLOAD_IDENTITY_PROVIDER" || (echo "Missing secret GCP_WORKLOAD_IDENTITY_PROVIDER" && exit 1)
+          test -n "$GCP_SERVICE_ACCOUNT" || (echo "Missing secret GCP_SERVICE_ACCOUNT" && exit 1)
+          test -n "$CA_PEM" || (echo "Missing secret CA_PEM" && exit 1)
+          test -n "$FIREBASE_CREDENTIALS_JSON" || (echo "Missing secret FIREBASE_CREDENTIALS_JSON" && exit 1)
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${GAR_LOCATION}-docker.pkg.dev" --quiet
+
+      - name: Create build-time secret files
+        env:
+          CA_PEM: ${{ secrets.CA_PEM }}
+          FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+        run: |
+          printf '%s' "$CA_PEM" > ca.pem
+          printf '%s' "$FIREBASE_CREDENTIALS_JSON" > "$FIREBASE_CREDENTIALS_FILE"
+
+      - name: Build image
+        run: |
+          IMAGE="${GAR_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/${CLOUD_RUN_SERVICE}:${GITHUB_SHA}"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          docker build --tag "$IMAGE" .
+
+      - name: Push image
+        run: docker push "$IMAGE"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "$CLOUD_RUN_SERVICE" \
+            --project "$GCP_PROJECT_ID" \
+            --region "$GCP_REGION" \
+            --image "$IMAGE" \
+            --platform managed \
+            --allow-unauthenticated \
+            --update-env-vars "PORT=8080,FIREBASE_ENABLED=true,FIREBASE_CREDENTIALS_PATH=/app/credentials.json,FIREBASE_PROJECT_ID=${GCP_PROJECT_ID},KAFKA_SSL_TRUSTSTORE_LOCATION=/app/ca.pem"

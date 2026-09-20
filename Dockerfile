@@ -12,6 +12,7 @@ WORKDIR /app
 
 COPY --from=builder /workspace/target/*-runner.jar application.jar
 COPY ca.pem /app/ca.pem
+COPY cyco-collection-firebase-adminsdk-fbsvc-50baaa2af1.json /app/credentials.json
 
 EXPOSE 8080
 

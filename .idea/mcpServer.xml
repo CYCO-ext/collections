@@ -3,9 +3,12 @@
   <component name="McpServerSettings">
     <option name="autoApproveAgentEdits" value="true" />
     <option name="defaultsApplied" value="true" />
+    <option name="defaultsVersion" value="2" />
     <option name="disabledToolIds">
       <set>
         <option value="list_themes" />
+        <option value="get_sonar_rule_description" />
+        <option value="run_sonarqube_analysis" />
       </set>
     </option>
   </component>

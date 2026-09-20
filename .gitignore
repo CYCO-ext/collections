@@ -5,7 +5,7 @@ target/
 .kotlin
 ca.pem
 .env
-
+cyco-collection-firebase-adminsdk-fbsvc-50baaa2af1.json
 ### IntelliJ IDEA ###
 .idea/modules.xml
 .idea/jarRepositories.xml

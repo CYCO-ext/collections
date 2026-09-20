@@ -7,6 +7,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.example.application.route.RouteMapModels.GetSavedRouteMapQuery;
 import org.example.application.route.RouteModels.*;
+import org.example.application.deliveryman.DeliverymanModels.AssignDeliveryRouteCommand;
 import org.example.application.route.SavedRouteModels.MoveRouteRequestCommand;
 import org.example.application.route.SavedRouteModels.SaveRouteSuggestionCommand;
 import org.example.application.usecase.*;
@@ -39,6 +40,9 @@ public class CollectorRouteResource {
 
     @Inject
     GetSavedRouteMapUseCase getSavedRouteMapUseCase;
+
+    @Inject
+    DeliverymanUseCase deliverymanUseCase;
 
     @POST
     @Path("/suggest")
@@ -137,6 +141,32 @@ public class CollectorRouteResource {
                         Response.status(Response.Status.CONFLICT).entity(ex.getMessage()).build())
                 .onFailure().recoverWithItem(ex -> {
                     LOG.error("Error moving route request", ex);
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
+                });
+    }
+
+    @POST
+    @Path("/saved/{savedRouteId}/vehicles/{vehicleIndex}/deliveryman")
+    public Uni<Response> assignDeliveryman(
+            @PathParam("savedRouteId") String savedRouteId,
+            @PathParam("vehicleIndex") Integer vehicleIndex,
+            AssignDeliverymanDTO dto
+    ) {
+        LOG.info("POST /collectors/routes/saved/{}/vehicles/{}/deliveryman", savedRouteId, vehicleIndex);
+        AssignDeliveryRouteCommand command = new AssignDeliveryRouteCommand(
+                dto == null ? null : dto.getCollectorId(),
+                dto == null ? null : dto.getDeliverymanId(),
+                savedRouteId,
+                vehicleIndex
+        );
+        return deliverymanUseCase.assignRoute(command)
+                .onItem().transform(result -> Response.status(Response.Status.CREATED).entity(result).build())
+                .onFailure(IllegalArgumentException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build())
+                .onFailure(IllegalStateException.class).recoverWithItem(ex ->
+                        Response.status(Response.Status.CONFLICT).entity(ex.getMessage()).build())
+                .onFailure().recoverWithItem(ex -> {
+                    LOG.error("Error assigning deliveryman to saved route vehicle", ex);
                     return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
                 });
     }
@@ -291,6 +321,27 @@ public class CollectorRouteResource {
 
         public void setTargetVehicleIndex(Integer targetVehicleIndex) {
             this.targetVehicleIndex = targetVehicleIndex;
+        }
+    }
+
+    public static class AssignDeliverymanDTO {
+        private String collectorId;
+        private String deliverymanId;
+
+        public String getCollectorId() {
+            return collectorId;
+        }
+
+        public void setCollectorId(String collectorId) {
+            this.collectorId = collectorId;
+        }
+
+        public String getDeliverymanId() {
+            return deliverymanId;
+        }
+
+        public void setDeliverymanId(String deliverymanId) {
+            this.deliverymanId = deliverymanId;
         }
     }
 

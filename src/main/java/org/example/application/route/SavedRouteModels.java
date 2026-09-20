@@ -15,6 +15,25 @@ public final class SavedRouteModels {
         CLOSED
     }
 
+    public enum RouteAssignmentStatus {
+        ASSIGNED,
+        IN_PROGRESS,
+        COMPLETED,
+        PARTIALLY_COMPLETED,
+        FAILED
+    }
+
+    public record RouteAssignment(
+            int vehicleIndex,
+            String deliverymanId,
+            String collectorId,
+            RouteAssignmentStatus status,
+            LocalDateTime assignedAt,
+            LocalDateTime startedAt,
+            LocalDateTime completedAt
+    ) {
+    }
+
     public record SaveRouteSuggestionCommand(
             String collectorId,
             String source,
@@ -36,6 +55,7 @@ public final class SavedRouteModels {
             SavedRouteStatus status,
             String fingerprint,
             List<String> assignedCollectionRequestIds,
+            List<RouteAssignment> assignments,
             RouteOptimizationResult suggestion,
             LocalDateTime createdAt,
             LocalDateTime updatedAt,
@@ -55,6 +75,7 @@ public final class SavedRouteModels {
                     status,
                     fingerprint,
                     List.copyOf(assignedCollectionRequestIds),
+                    List.of(),
                     suggestion,
                     now,
                     now,
@@ -72,6 +93,7 @@ public final class SavedRouteModels {
                     SavedRouteStatus.CLOSED,
                     fingerprint,
                     assignedCollectionRequestIds,
+                    assignments == null ? List.of() : List.copyOf(assignments),
                     suggestion,
                     createdAt,
                     closedAt,
@@ -91,6 +113,7 @@ public final class SavedRouteModels {
                     status,
                     fingerprint,
                     List.copyOf(assignedCollectionRequestIds),
+                    assignments == null ? List.of() : List.copyOf(assignments),
                     suggestion,
                     createdAt,
                     updatedAt,
@@ -105,6 +128,7 @@ public final class SavedRouteModels {
             SavedRouteStatus status,
             String fingerprint,
             List<String> assignedCollectionRequestIds,
+            List<RouteAssignment> assignments,
             RouteOptimizationResult suggestion,
             LocalDateTime createdAt,
             LocalDateTime updatedAt,
@@ -117,6 +141,7 @@ public final class SavedRouteModels {
                     route.status(),
                     route.fingerprint(),
                     route.assignedCollectionRequestIds(),
+                    route.assignments() == null ? List.of() : route.assignments(),
                     route.suggestion(),
                     route.createdAt(),
                     route.updatedAt(),

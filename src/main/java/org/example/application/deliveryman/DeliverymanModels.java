@@ -12,6 +12,8 @@ public final class DeliverymanModels {
         ASSIGNED,
         IN_PROGRESS,
         COMPLETED,
+        PARTIALLY_COMPLETED,
+        FAILED,
         CANCELLED
     }
 

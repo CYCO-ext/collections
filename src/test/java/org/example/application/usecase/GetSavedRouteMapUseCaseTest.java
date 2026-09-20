@@ -167,6 +167,7 @@ class GetSavedRouteMapUseCaseTest {
                 SavedRouteStatus.OPEN,
                 "route-fingerprint",
                 stops.stream().map(RouteStop::collectionRequestId).toList(),
+                List.of(),
                 new RouteOptimizationResult(
                         SolverStatus.FEASIBLE,
                         new SolverMetadata("TEST", 1, 10, 0),

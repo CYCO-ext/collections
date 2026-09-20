@@ -9,6 +9,7 @@ import org.example.application.deliveryman.DeliverymanModels.DeliverymanProfile;
 import org.example.application.deliveryman.DeliverymanModels.RouteAssignmentStatus;
 import org.example.application.deliveryman.DeliverymanModels.SyncDeliverymanCommand;
 import org.example.application.port.out.DeliveryRouteAssignmentPort;
+import org.example.application.port.out.DeliverymanDirectoryPort;
 import org.example.application.port.out.DeliverymanPort;
 import org.example.application.port.out.SavedRoutePort;
 import org.example.application.route.RouteModels.RoutePlan;
@@ -23,6 +24,9 @@ import java.util.Objects;
 public class DeliverymanUseCase {
     @Inject
     DeliverymanPort deliverymanPort;
+
+    @Inject
+    DeliverymanDirectoryPort deliverymanDirectoryPort;
 
     @Inject
     DeliveryRouteAssignmentPort assignmentPort;
@@ -85,11 +89,14 @@ public class DeliverymanUseCase {
                     if (stopIds.isEmpty()) {
                         return Uni.createFrom().failure(new IllegalStateException("Saved route vehicle has no stops"));
                     }
-                    return deliverymanPort.findById(command.deliverymanId())
+                    return deliverymanDirectoryPort.findById(command.deliverymanId())
                             .onItem().ifNull().failWith(() -> new IllegalArgumentException("Deliveryman not found: " + command.deliverymanId()))
                             .flatMap(deliveryman -> {
                                 if (!Objects.equals(deliveryman.collectorId(), command.collectorId())) {
                                     return Uni.createFrom().failure(new IllegalStateException("Deliveryman does not belong to collector"));
+                                }
+                                if (!deliveryman.active()) {
+                                    return Uni.createFrom().failure(new IllegalStateException("Deliveryman is not active"));
                                 }
                                 return assignmentPort.findOpenBySavedRouteIdAndVehicleIndex(command.savedRouteId(), vehicleIndex)
                                         .flatMap(existing -> {

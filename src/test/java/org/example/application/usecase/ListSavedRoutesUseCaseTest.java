@@ -41,6 +41,7 @@ class ListSavedRoutesUseCaseTest {
                 SavedRouteStatus.OPEN,
                 "fingerprint",
                 List.of("request-1"),
+                List.of(),
                 new RouteOptimizationResult(SolverStatus.FEASIBLE, new SolverMetadata("TEST", 1, 1, 0), List.of(), List.of()),
                 LocalDateTime.now(),
                 LocalDateTime.now(),

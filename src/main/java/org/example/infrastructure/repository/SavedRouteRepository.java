@@ -19,6 +19,8 @@ import org.example.application.route.RouteModels.UnassignedReason;
 import org.example.application.route.RouteModels.UnassignedRouteStop;
 import org.example.application.route.SavedRouteModels.SavedRouteStatus;
 import org.example.application.route.SavedRouteModels.SavedRouteSuggestion;
+import org.example.application.route.SavedRouteModels.RouteAssignment;
+import org.example.application.route.SavedRouteModels.RouteAssignmentStatus;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -118,6 +120,7 @@ public class SavedRouteRepository {
                 .append("status", route.status().toString())
                 .append("fingerprint", route.fingerprint())
                 .append("assignedCollectionRequestIds", route.assignedCollectionRequestIds())
+                .append("assignments", route.assignments() == null ? List.of() : route.assignments().stream().map(this::toAssignmentDocument).toList())
                 .append("suggestion", toSuggestionDocument(route.suggestion()))
                 .append("createdAt", toDate(route.createdAt()))
                 .append("updatedAt", toDate(route.updatedAt()))
@@ -131,10 +134,34 @@ public class SavedRouteRepository {
                 SavedRouteStatus.valueOf(doc.getString("status")),
                 doc.getString("fingerprint"),
                 doc.getList("assignedCollectionRequestIds", String.class),
+                doc.getList("assignments", Document.class, List.of()).stream().map(this::fromAssignmentDocument).toList(),
                 fromSuggestionDocument(doc.get("suggestion", Document.class)),
                 toLocalDateTime(doc.getDate("createdAt")),
                 toLocalDateTime(doc.getDate("updatedAt")),
                 toLocalDateTime(doc.getDate("closedAt"))
+        );
+    }
+
+    private Document toAssignmentDocument(RouteAssignment assignment) {
+        return new Document()
+                .append("vehicleIndex", assignment.vehicleIndex())
+                .append("deliverymanId", assignment.deliverymanId())
+                .append("collectorId", assignment.collectorId())
+                .append("status", assignment.status().toString())
+                .append("assignedAt", toDate(assignment.assignedAt()))
+                .append("startedAt", assignment.startedAt() == null ? null : toDate(assignment.startedAt()))
+                .append("completedAt", assignment.completedAt() == null ? null : toDate(assignment.completedAt()));
+    }
+
+    private RouteAssignment fromAssignmentDocument(Document doc) {
+        return new RouteAssignment(
+                number(doc.get("vehicleIndex")).intValue(),
+                doc.getString("deliverymanId"),
+                doc.getString("collectorId"),
+                RouteAssignmentStatus.valueOf(doc.getString("status")),
+                toLocalDateTime(doc.getDate("assignedAt")),
+                toLocalDateTime(doc.getDate("startedAt")),
+                toLocalDateTime(doc.getDate("completedAt"))
         );
     }
 

@@ -1,6 +1,8 @@
 package org.example.presentation.rest;
 
 import jakarta.ws.rs.core.Response;
+import org.example.application.deliveryman.DeliverymanModels.DeliveryRouteAssignment;
+import org.example.application.deliveryman.DeliverymanModels.RouteAssignmentStatus;
 import org.example.application.route.RouteMapModels.SavedRouteMapResult;
 import org.example.application.route.RouteMapModels.VehicleRouteMapResult;
 import org.example.application.route.RouteMapModels.RouteMapProvider;
@@ -27,6 +29,7 @@ class CollectorRouteResourceTest {
     private DeleteSavedRouteSuggestionUseCase deleteSavedRouteSuggestionUseCase;
     private MoveRouteRequestUseCase moveRouteRequestUseCase;
     private GetSavedRouteMapUseCase getSavedRouteMapUseCase;
+    private DeliverymanUseCase deliverymanUseCase;
 
     @BeforeEach
     void setUp() {
@@ -36,6 +39,7 @@ class CollectorRouteResourceTest {
         deleteSavedRouteSuggestionUseCase = mock(DeleteSavedRouteSuggestionUseCase.class);
         moveRouteRequestUseCase = mock(MoveRouteRequestUseCase.class);
         getSavedRouteMapUseCase = mock(GetSavedRouteMapUseCase.class);
+        deliverymanUseCase = mock(DeliverymanUseCase.class);
         resource = new CollectorRouteResource();
         resource.routeOptimizationUseCase = routeOptimizationUseCase;
         resource.saveRouteSuggestionUseCase = saveRouteSuggestionUseCase;
@@ -43,6 +47,7 @@ class CollectorRouteResourceTest {
         resource.deleteSavedRouteSuggestionUseCase = deleteSavedRouteSuggestionUseCase;
         resource.moveRouteRequestUseCase = moveRouteRequestUseCase;
         resource.getSavedRouteMapUseCase = getSavedRouteMapUseCase;
+        resource.deliverymanUseCase = deliverymanUseCase;
     }
 
     @Test
@@ -262,6 +267,42 @@ class CollectorRouteResourceTest {
     }
 
     @Test
+    void assignDeliverymanReturnsCreatedAssignment() {
+        DeliveryRouteAssignment assignment = new DeliveryRouteAssignment(
+                "assignment-1",
+                "collector-1",
+                "deliveryman-1",
+                "saved-1",
+                0,
+                RouteAssignmentStatus.ASSIGNED,
+                List.of("request-1"),
+                List.of(),
+                LocalDateTime.now(),
+                null,
+                null,
+                LocalDateTime.now()
+        );
+        when(deliverymanUseCase.assignRoute(any())).thenReturn(io.smallrye.mutiny.Uni.createFrom().item(assignment));
+
+        Response response = resource.assignDeliveryman("saved-1", 0, assignDeliverymanRequest()).await().indefinitely();
+
+        assertEquals(201, response.getStatus());
+        assertEquals(assignment, response.getEntity());
+        verify(deliverymanUseCase).assignRoute(any());
+    }
+
+    @Test
+    void assignDeliverymanReturnsConflictForOwnershipFailure() {
+        when(deliverymanUseCase.assignRoute(any())).thenReturn(io.smallrye.mutiny.Uni.createFrom().failure(
+                new IllegalStateException("Deliveryman does not belong to collector")));
+
+        Response response = resource.assignDeliveryman("saved-1", 0, assignDeliverymanRequest()).await().indefinitely();
+
+        assertEquals(409, response.getStatus());
+        assertEquals("Deliveryman does not belong to collector", response.getEntity());
+    }
+
+    @Test
     void deleteSavedRouteReturnsBadRequestForValidationError() {
         when(deleteSavedRouteSuggestionUseCase.delete(" ")).thenReturn(io.smallrye.mutiny.Uni.createFrom().failure(
                 new IllegalArgumentException("saved route id is required")));
@@ -302,6 +343,13 @@ class CollectorRouteResourceTest {
         return request;
     }
 
+    private CollectorRouteResource.AssignDeliverymanDTO assignDeliverymanRequest() {
+        CollectorRouteResource.AssignDeliverymanDTO dto = new CollectorRouteResource.AssignDeliverymanDTO();
+        dto.setCollectorId("collector-1");
+        dto.setDeliverymanId("deliveryman-1");
+        return dto;
+    }
+
     private CollectorRouteResource.SaveRouteRequestDTO saveRequest() {
         CollectorRouteResource.SaveRouteRequestDTO request = new CollectorRouteResource.SaveRouteRequestDTO();
         request.setCollectorId("collector-1");
@@ -335,6 +383,7 @@ class CollectorRouteResourceTest {
                 SavedRouteStatus.OPEN,
                 "fingerprint",
                 List.of("request-1"),
+                List.of(),
                 suggestion(),
                 now,
                 now,

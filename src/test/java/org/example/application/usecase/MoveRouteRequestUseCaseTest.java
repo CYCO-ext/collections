@@ -137,19 +137,19 @@ class MoveRouteRequestUseCaseTest {
     private SavedRouteSuggestion openRoute(String id) {
         LocalDateTime now = LocalDateTime.now();
         return new SavedRouteSuggestion(id, "collector-1", SavedRouteStatus.OPEN, "fingerprint",
-                List.of("request-b", "request-a", "request-c"), suggestion(100.0), now, now, null);
+                List.of("request-b", "request-a", "request-c"), List.of(), suggestion(100.0), now, now, null);
     }
 
     private SavedRouteSuggestion closedRoute() {
         LocalDateTime now = LocalDateTime.now();
         return new SavedRouteSuggestion("saved-1", "collector-1", SavedRouteStatus.CLOSED, "fingerprint",
-                List.of("request-b", "request-a", "request-c"), suggestion(100.0), now, now, now);
+                List.of("request-b", "request-a", "request-c"), List.of(), suggestion(100.0), now, now, now);
     }
 
     private SavedRouteSuggestion routeWithFullTarget() {
         LocalDateTime now = LocalDateTime.now();
         return new SavedRouteSuggestion("saved-1", "collector-1", SavedRouteStatus.OPEN, "fingerprint",
-                List.of("request-b", "request-a", "request-c"), suggestion(25.0), now, now, null);
+                List.of("request-b", "request-a", "request-c"), List.of(), suggestion(25.0), now, now, null);
     }
 
     private RouteOptimizationResult suggestion(double targetCapacity) {

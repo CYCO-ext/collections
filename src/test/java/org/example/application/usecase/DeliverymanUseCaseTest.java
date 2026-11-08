@@ -1,6 +1,8 @@
 package org.example.application.usecase;
 
 import io.smallrye.mutiny.Uni;
+import org.example.domain.entity.CollectionRequest;
+import org.example.domain.entity.CompletionEvidence;
 import org.example.application.deliveryman.DeliverymanModels.AssignDeliveryRouteCommand;
 import org.example.application.deliveryman.DeliverymanModels.DeliveryRouteAssignment;
 import org.example.application.deliveryman.DeliverymanModels.DeliveryRouteLog;
@@ -35,6 +37,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.inOrder;
@@ -354,6 +357,114 @@ class DeliverymanUseCaseTest {
         ArgumentCaptor<DeliveryRouteLog> captor = ArgumentCaptor.forClass(DeliveryRouteLog.class);
         verify(routeLogPort).append(captor.capture());
         assertEquals(RouteLogEventType.ROUTE_COMPLETED, captor.getValue().eventType());
+    }
+
+    @Test
+    void forgedStopCompletedLogAndLegacyBooleanCannotCompleteRoute() {
+        DeliveryRouteAssignment assignment = assignment(RouteAssignmentStatus.IN_PROGRESS, List.of());
+        CollectionRequest request = request("request-1", CollectionRequest.Status.IN_PROGRESS, null,
+                LocalDateTime.now(), true);
+        when(assignmentPort.findById("assignment-1")).thenReturn(Uni.createFrom().item(assignment));
+        when(routeLogPort.findBySavedRouteIdAndVehicleIndex("saved-1", 0))
+                .thenReturn(Uni.createFrom().item(List.of(log("request-1", RouteLogEventType.STOP_COMPLETED))));
+        when(collectionRequestPort.findByIds(List.of("request-1", "request-2")))
+                .thenReturn(Uni.createFrom().item(List.of(request)));
+        when(assignmentPort.update(any())).thenReturn(Uni.createFrom().voidItem());
+        when(routeLogPort.append(any())).thenReturn(Uni.createFrom().voidItem());
+
+        DeliveryRouteAssignment result = useCase.finishAssignment("deliveryman-1", "assignment-1").await().indefinitely();
+
+        assertEquals(RouteAssignmentStatus.PARTIALLY_COMPLETED, result.status());
+        assertEquals(List.of(), result.completedCollectionRequestIds());
+    }
+
+    @Test
+    void onlyPersistedCompletionEvidenceCountsForNewlyCompletedCollections() {
+        DeliveryRouteAssignment assignment = assignment(RouteAssignmentStatus.IN_PROGRESS, List.of());
+        CollectionRequest validated = request("request-1", CollectionRequest.Status.COMPLETED,
+                evidence("completion-1"), LocalDateTime.now(), false);
+        CollectionRequest booleanOnly = request("request-2", CollectionRequest.Status.COMPLETED,
+                null, LocalDateTime.now(), true);
+        when(assignmentPort.findById("assignment-1")).thenReturn(Uni.createFrom().item(assignment));
+        when(routeLogPort.findBySavedRouteIdAndVehicleIndex("saved-1", 0)).thenReturn(Uni.createFrom().item(List.of()));
+        when(collectionRequestPort.findByIds(List.of("request-1", "request-2")))
+                .thenReturn(Uni.createFrom().item(List.of(validated, booleanOnly)));
+        when(assignmentPort.update(any())).thenReturn(Uni.createFrom().voidItem());
+        when(routeLogPort.append(any())).thenReturn(Uni.createFrom().voidItem());
+
+        DeliveryRouteAssignment result = useCase.finishAssignment("deliveryman-1", "assignment-1").await().indefinitely();
+
+        assertEquals(RouteAssignmentStatus.PARTIALLY_COMPLETED, result.status());
+        assertEquals(List.of("request-1"), result.completedCollectionRequestIds());
+    }
+
+    @Test
+    void recordsBeforeCutoverRemainHistoricalAndRecordsAfterCutoverNeedEvidence() {
+        DeliveryRouteAssignment assignment = assignment(RouteAssignmentStatus.IN_PROGRESS, List.of());
+        LocalDateTime cutover = useCase.completionCodeHistoricalCutover;
+        CollectionRequest historical = request("request-1", CollectionRequest.Status.COMPLETED,
+                null, cutover.minusNanos(1), false);
+        CollectionRequest afterCutover = request("request-2", CollectionRequest.Status.COMPLETED,
+                null, cutover.plusNanos(1), false);
+        when(assignmentPort.findById("assignment-1")).thenReturn(Uni.createFrom().item(assignment));
+        when(routeLogPort.findBySavedRouteIdAndVehicleIndex("saved-1", 0)).thenReturn(Uni.createFrom().item(List.of()));
+        when(collectionRequestPort.findByIds(List.of("request-1", "request-2")))
+                .thenReturn(Uni.createFrom().item(List.of(historical, afterCutover)));
+        when(assignmentPort.update(any())).thenReturn(Uni.createFrom().voidItem());
+        when(routeLogPort.append(any())).thenReturn(Uni.createFrom().voidItem());
+
+        DeliveryRouteAssignment result = useCase.finishAssignment("deliveryman-1", "assignment-1").await().indefinitely();
+
+        assertEquals(RouteAssignmentStatus.PARTIALLY_COMPLETED, result.status());
+        assertEquals(List.of("request-1"), result.completedCollectionRequestIds());
+    }
+
+    @Test
+    void failedStopsCannotCountAsCompletedAndTerminalAssignmentsRemainVisible() {
+        DeliveryRouteAssignment assignment = assignment(RouteAssignmentStatus.IN_PROGRESS, List.of());
+        when(assignmentPort.findById("assignment-1")).thenReturn(Uni.createFrom().item(assignment));
+        when(routeLogPort.findBySavedRouteIdAndVehicleIndex("saved-1", 0)).thenReturn(Uni.createFrom().item(List.of(
+                log("request-1", RouteLogEventType.STOP_FAILED),
+                log("request-2", RouteLogEventType.STOP_FAILED))));
+        when(collectionRequestPort.findByIds(List.of("request-1", "request-2")))
+                .thenReturn(Uni.createFrom().item(List.of(
+                        request("request-1", CollectionRequest.Status.IN_PROGRESS, null, LocalDateTime.now(), false),
+                        request("request-2", CollectionRequest.Status.REJECTED, null, LocalDateTime.now(), false))));
+        when(assignmentPort.update(any())).thenReturn(Uni.createFrom().voidItem());
+        when(routeLogPort.append(any())).thenReturn(Uni.createFrom().voidItem());
+
+        DeliveryRouteAssignment failed = useCase.finishAssignment("deliveryman-1", "assignment-1").await().indefinitely();
+        assertEquals(RouteAssignmentStatus.FAILED, failed.status());
+        assertEquals(List.of(), failed.completedCollectionRequestIds());
+
+        List<DeliveryRouteAssignment> terminalAssignments = List.of(
+                assignment(RouteAssignmentStatus.COMPLETED, List.of("request-1")),
+                assignment(RouteAssignmentStatus.PARTIALLY_COMPLETED, List.of()),
+                assignment(RouteAssignmentStatus.FAILED, List.of()),
+                assignment(RouteAssignmentStatus.CANCELLED, List.of()));
+        when(assignmentPort.findByDeliverymanIdAndStatuses(eq("deliveryman-1"), any()))
+                .thenReturn(Uni.createFrom().item(terminalAssignments));
+
+        assertEquals(terminalAssignments, useCase.listActiveAssignments("deliveryman-1").await().indefinitely());
+        verify(assignmentPort).findByDeliverymanIdAndStatuses(eq("deliveryman-1"), eq(List.of(
+                RouteAssignmentStatus.ASSIGNED, RouteAssignmentStatus.IN_PROGRESS, RouteAssignmentStatus.COMPLETED,
+                RouteAssignmentStatus.PARTIALLY_COMPLETED, RouteAssignmentStatus.FAILED, RouteAssignmentStatus.CANCELLED)));
+    }
+
+    private CollectionRequest request(String id, CollectionRequest.Status status, CompletionEvidence evidence,
+                                      LocalDateTime updatedAt, boolean collectorConfirmed) {
+        CollectionRequest request = new CollectionRequest("generator-1", "address-1", List.of("paper"), 10.0);
+        request.setId(id);
+        request.setStatus(status);
+        request.setCollectorConfirmed(collectorConfirmed);
+        request.setCompletionEvidence(evidence);
+        request.setUpdatedAt(updatedAt);
+        return request;
+    }
+
+    private CompletionEvidence evidence(String completionId) {
+        return new CompletionEvidence(completionId, "user-1", "DELIVERYMAN", "deliveryman-1",
+                LocalDateTime.now(), 1, "00000000-0000-0000-0000-000000000001", "payload-digest");
     }
 
     private AssignDeliveryRouteCommand command() {

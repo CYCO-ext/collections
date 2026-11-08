@@ -3,6 +3,7 @@ package org.example.application.usecase;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.example.application.deliveryman.DeliverymanModels.AssignDeliveryRouteCommand;
 import org.example.application.deliveryman.DeliverymanModels.DeliveryRouteAssignment;
 import org.example.application.deliveryman.DeliverymanModels.DeliveryRouteLog;
@@ -28,6 +29,10 @@ import java.util.Objects;
 
 @Singleton
 public class DeliverymanUseCase {
+    private static final LocalDateTime DEFAULT_COMPLETION_CODE_CUTOVER = LocalDateTime.of(2026, 11, 7, 0, 0);
+
+    @ConfigProperty(name = "completion-code.historical-cutover", defaultValue = "2026-11-07T00:00:00")
+    LocalDateTime completionCodeHistoricalCutover = DEFAULT_COMPLETION_CODE_CUTOVER;
     @Inject
     DeliverymanPort deliverymanPort;
 
@@ -137,7 +142,9 @@ public class DeliverymanUseCase {
         validateRequired(deliverymanId, "deliverymanId");
         return assignmentPort.findByDeliverymanIdAndStatuses(
                 deliverymanId,
-                List.of(RouteAssignmentStatus.ASSIGNED, RouteAssignmentStatus.IN_PROGRESS)
+                List.of(RouteAssignmentStatus.ASSIGNED, RouteAssignmentStatus.IN_PROGRESS,
+                        RouteAssignmentStatus.COMPLETED, RouteAssignmentStatus.PARTIALLY_COMPLETED,
+                        RouteAssignmentStatus.FAILED, RouteAssignmentStatus.CANCELLED)
         );
     }
 
@@ -252,21 +259,32 @@ public class DeliverymanUseCase {
     public Uni<DeliveryRouteAssignment> finishAssignment(String deliverymanId, String assignmentId) {
         return loadAssignmentForDeliveryman(deliverymanId, assignmentId)
                 .flatMap(assignment -> routeLogPort.findBySavedRouteIdAndVehicleIndex(assignment.savedRouteId(), assignment.vehicleIndex())
-                        .flatMap(logs -> {
-                            long completed = logs.stream()
-                                    .filter(log -> log.eventType() == RouteLogEventType.STOP_COMPLETED)
-                                    .map(DeliveryRouteLog::collectionRequestId)
+                        .flatMap(logs -> collectionRequestPort.findByIds(assignment.assignedCollectionRequestIds())
+                                .flatMap(requests -> {
+                            List<CollectionRequest> safeRequests = requests == null ? List.of() : requests;
+                            java.util.Map<String, CollectionRequest> requestById = safeRequests.stream()
+                                    .filter(java.util.Objects::nonNull)
+                                    .collect(java.util.stream.Collectors.toMap(CollectionRequest::getId, request -> request,
+                                            (first, ignored) -> first));
+                            List<String> completedIds = assignment.assignedCollectionRequestIds().stream()
+                                    .filter(requestId -> isValidatedOrHistoricalCompletion(requestById.get(requestId)))
                                     .distinct()
-                                    .count();
-                            long failed = logs.stream()
+                                    .toList();
+                            long failed = (logs == null ? List.<DeliveryRouteLog>of() : logs).stream()
                                     .filter(log -> log.eventType() == RouteLogEventType.STOP_FAILED)
                                     .map(DeliveryRouteLog::collectionRequestId)
+                                    .filter(assignment.assignedCollectionRequestIds()::contains)
                                     .distinct()
                                     .count();
                             int assigned = assignment.assignedCollectionRequestIds().size();
+                            DeliveryRouteAssignment withProgress = assignment;
+                            LocalDateTime now = LocalDateTime.now();
+                            for (String requestId : completedIds) {
+                                withProgress = withProgress.completeStop(requestId, now);
+                            }
                             RouteAssignmentStatus outcome;
                             RouteLogEventType eventType;
-                            if (assigned > 0 && completed == assigned) {
+                            if (assigned > 0 && completedIds.size() == assigned) {
                                 outcome = RouteAssignmentStatus.COMPLETED;
                                 eventType = RouteLogEventType.ROUTE_COMPLETED;
                             } else if (assigned > 0 && failed == assigned) {
@@ -276,14 +294,26 @@ public class DeliverymanUseCase {
                                 outcome = RouteAssignmentStatus.PARTIALLY_COMPLETED;
                                 eventType = RouteLogEventType.ROUTE_COMPLETED;
                             }
-                            LocalDateTime now = LocalDateTime.now();
-                            DeliveryRouteAssignment finished = assignment.finish(outcome, now);
+                            DeliveryRouteAssignment finished = withProgress.finish(outcome, now);
                             DeliveryRouteLog log = DeliveryRouteLog.create(finished, null, eventType, null, null, now);
                             return assignmentPort.update(finished)
-                                    .flatMap(it -> routeLogPort.append(log))
-                                    .replaceWith(finished);
-                        }));
+                                    .replaceWith(new FinishedAssignment(finished, log));
+                        })
+                        .flatMap(result -> routeLogPort.append(result.log()).replaceWith(result.assignment()))));
     }
+
+    private boolean isValidatedOrHistoricalCompletion(CollectionRequest request) {
+        if (request == null || request.getStatus() != CollectionRequest.Status.COMPLETED) {
+            return false;
+        }
+        if (request.getCompletionEvidence() != null) {
+            return true;
+        }
+        LocalDateTime updatedAt = request.getUpdatedAt();
+        return request.getCompletionCode() == null && updatedAt != null && updatedAt.isBefore(completionCodeHistoricalCutover);
+    }
+
+    private record FinishedAssignment(DeliveryRouteAssignment assignment, DeliveryRouteLog log) { }
 
     private Uni<DeliveryRouteAssignment> loadAssignmentForDeliveryman(String deliverymanId, String assignmentId) {
         validateRequired(deliverymanId, "deliverymanId");

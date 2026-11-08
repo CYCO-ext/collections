@@ -19,6 +19,8 @@ public class CollectionRequest {
     private String selectedCollectorId;
     private Boolean generatorConfirmed;
     private Boolean collectorConfirmed;
+    private CompletionCodeState completionCode;
+    private CompletionEvidence completionEvidence;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -130,6 +132,24 @@ public class CollectionRequest {
         this.updatedAt = updatedAt;
     }
 
+    public CompletionCodeState getCompletionCode() {
+        return completionCode;
+    }
+
+    public void setCompletionCode(CompletionCodeState completionCode) {
+        this.completionCode = completionCode;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public CompletionEvidence getCompletionEvidence() {
+        return completionEvidence;
+    }
+
+    public void setCompletionEvidence(CompletionEvidence completionEvidence) {
+        this.completionEvidence = completionEvidence;
+        this.updatedAt = LocalDateTime.now();
+    }
+
     public boolean canStartCollection() {
         return Status.PENDING.equals(status) && selectedCollectorId != null;
     }
@@ -137,7 +157,7 @@ public class CollectionRequest {
     public boolean canMarkCompleted() {
         return (Status.IN_PROGRESS.equals(status) || Status.ON_THE_WAY.equals(status)) &&
                 Boolean.TRUE.equals(generatorConfirmed) &&
-                Boolean.TRUE.equals(collectorConfirmed);
+                Boolean.TRUE.equals(collectorConfirmed) && completionEvidence != null;
     }
 
     public boolean canCancel() {

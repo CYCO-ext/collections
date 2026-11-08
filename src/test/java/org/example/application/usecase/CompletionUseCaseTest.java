@@ -57,7 +57,7 @@ class CompletionUseCaseTest {
     }
 
     @Test
-    void testConfirmCollectorCompletion() {
+    void testCollectorConfirmationWithoutCodeDoesNotCompleteRequest() {
         String requestId = "req-001";
         CollectionRequest request = request(requestId);
         request.setGeneratorConfirmed(true);
@@ -66,26 +66,19 @@ class CompletionUseCaseTest {
                 .thenReturn(Uni.createFrom().item(request));
         when(collectionRequestPort.update(any(CollectionRequest.class)))
                 .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
-        when(eventPort.publishCollectionEvent(any()))
-                .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
-        when(closeSavedRoutesUseCase.closeRoutesContaining(requestId))
-                .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
-        when(notificationUseCase.notifyGenerator(any(CollectionRequest.class), any()))
-                .thenReturn(Uni.createFrom().voidItem());
-
         Uni<Void> result = useCase.confirmCollectorCompletion(requestId);
 
         assertNotNull(result);
         result.await().indefinitely();
 
         verify(collectionRequestPort).findById(requestId);
-        verify(collectionRequestPort, times(2)).update(any(CollectionRequest.class));
-        verify(eventPort).publishCollectionEvent(any());
-        verify(closeSavedRoutesUseCase).closeRoutesContaining(requestId);
+        verify(collectionRequestPort, times(1)).update(any(CollectionRequest.class));
+        verify(eventPort, never()).publishCollectionEvent(any());
+        verify(closeSavedRoutesUseCase, never()).closeRoutesContaining(any());
     }
 
     @Test
-    void testMarksCompletedWhenBothConfirm() {
+    void testLegacyConfirmationsDoNotCompleteRequestWithoutCodeEvidence() {
         String requestId = "req-001";
         CollectionRequest request = request(requestId);
         request.setGeneratorConfirmed(true);
@@ -94,21 +87,15 @@ class CompletionUseCaseTest {
                 .thenReturn(Uni.createFrom().item(request));
         when(collectionRequestPort.update(any(CollectionRequest.class)))
                 .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
-        when(eventPort.publishCollectionEvent(any()))
-                .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
-        when(closeSavedRoutesUseCase.closeRoutesContaining(requestId))
-                .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
-        when(notificationUseCase.notifyGenerator(any(CollectionRequest.class), any()))
-                .thenReturn(Uni.createFrom().voidItem());
-
         Uni<Void> result = useCase.confirmCollectorCompletion(requestId);
 
         assertNotNull(result);
         result.await().indefinitely();
 
         verify(collectionRequestPort).findById(requestId);
-        verify(eventPort).publishCollectionEvent(any());
-        verify(closeSavedRoutesUseCase).closeRoutesContaining(requestId);
+        verify(collectionRequestPort, times(1)).update(any(CollectionRequest.class));
+        verify(eventPort, never()).publishCollectionEvent(any());
+        verify(closeSavedRoutesUseCase, never()).closeRoutesContaining(any());
     }
 
     private CollectionRequest request(String requestId) {

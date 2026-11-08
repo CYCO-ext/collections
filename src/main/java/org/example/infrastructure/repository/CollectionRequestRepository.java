@@ -21,6 +21,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Arrays;
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.time.ZoneId;
 
 @Singleton
@@ -255,7 +257,7 @@ public class CollectionRequestRepository {
         request.setGeneratorId(doc.getString("generatorId"));
         request.setAddressId(doc.getString("addressId"));
         request.setMaterialIds(doc.getList("materialIds", String.class));
-        request.setWeight(doc.getDouble("weight"));
+        request.setWeight(MongoDocumentValues.asDouble(doc, "weight"));
         request.setStatus(CollectionRequest.Status.valueOf(doc.getString("status")));
         request.setSelectedCollectorId(doc.getString("selectedCollectorId"));
         request.setGeneratorConfirmed(doc.getBoolean("generatorConfirmed"));
@@ -266,8 +268,8 @@ public class CollectionRequestRepository {
         if (code != null) request.setCompletionCode(fromCompletionCode(code));
         Document completion = doc.get("completion", Document.class);
         if (completion != null) request.setCompletionEvidence(fromCompletionEvidence(completion));
-        request.setCreatedAt(doc.getDate("createdAt").toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime());
-        request.setUpdatedAt(doc.getDate("updatedAt").toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime());
+        request.setCreatedAt(toLocalDateTime(doc.get("createdAt")));
+        request.setUpdatedAt(toLocalDateTime(doc.get("updatedAt")));
         return request;
     }
 
@@ -328,6 +330,20 @@ public class CollectionRequestRepository {
 
     private LocalDateTime toLocalDateTime(Date value) {
         return value == null ? null : value.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
+    }
+
+    private LocalDateTime toLocalDateTime(Object value) {
+        if (value instanceof Date date) {
+            return toLocalDateTime(date);
+        }
+        if (value instanceof String text) {
+            try {
+                return Instant.parse(text).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            } catch (DateTimeParseException ignored) {
+                return LocalDateTime.parse(text);
+            }
+        }
+        return null;
     }
 }
 

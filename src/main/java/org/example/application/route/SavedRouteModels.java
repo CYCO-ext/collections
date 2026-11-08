@@ -30,8 +30,14 @@ public final class SavedRouteModels {
             RouteAssignmentStatus status,
             LocalDateTime assignedAt,
             LocalDateTime startedAt,
-            LocalDateTime completedAt
+            LocalDateTime completedAt,
+            List<String> assignedCollectionRequestIds,
+            List<String> completedCollectionRequestIds
     ) {
+        public RouteAssignment {
+            assignedCollectionRequestIds = assignedCollectionRequestIds == null ? List.of() : List.copyOf(assignedCollectionRequestIds);
+            completedCollectionRequestIds = completedCollectionRequestIds == null ? List.of() : List.copyOf(completedCollectionRequestIds);
+        }
     }
 
     public record SaveRouteSuggestionCommand(
@@ -115,6 +121,39 @@ public final class SavedRouteModels {
                     List.copyOf(assignedCollectionRequestIds),
                     assignments == null ? List.of() : List.copyOf(assignments),
                     suggestion,
+                    createdAt,
+                    updatedAt,
+                    closedAt
+            );
+        }
+
+        public SavedRouteSuggestion withAssignment(RouteAssignment assignment, LocalDateTime updatedAt) {
+            List<RouteAssignment> nextAssignments = new java.util.ArrayList<>(assignments == null ? List.of() : assignments);
+            nextAssignments.removeIf(existing -> existing.vehicleIndex() == assignment.vehicleIndex());
+            nextAssignments.add(assignment);
+            return new SavedRouteSuggestion(
+                    id,
+                    collectorId,
+                    status,
+                    fingerprint,
+                    assignedCollectionRequestIds,
+                    List.copyOf(nextAssignments),
+                    suggestion,
+                    createdAt,
+                    updatedAt,
+                    closedAt
+            );
+        }
+
+        public SavedRouteSuggestion withSuggestion(RouteOptimizationResult updatedSuggestion) {
+            return new SavedRouteSuggestion(
+                    id,
+                    collectorId,
+                    status,
+                    fingerprint,
+                    assignedCollectionRequestIds,
+                    assignments == null ? List.of() : List.copyOf(assignments),
+                    updatedSuggestion,
                     createdAt,
                     updatedAt,
                     closedAt

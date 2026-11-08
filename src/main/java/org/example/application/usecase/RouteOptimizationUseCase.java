@@ -226,7 +226,12 @@ public class RouteOptimizationUseCase {
                     request.getAddressId(),
                     request.getMaterialIds(),
                     request.getWeight(),
-                    location
+                    location,
+                    address.getStreet(),
+                    address.getNumber(),
+                    address.getCity(),
+                    address.getState(),
+                    address.getZipCode()
             ));
         }
         return new CandidateBuildResult(routable, unassigned);

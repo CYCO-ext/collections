@@ -150,7 +150,9 @@ public class SavedRouteRepository {
                 .append("status", assignment.status().toString())
                 .append("assignedAt", toDate(assignment.assignedAt()))
                 .append("startedAt", assignment.startedAt() == null ? null : toDate(assignment.startedAt()))
-                .append("completedAt", assignment.completedAt() == null ? null : toDate(assignment.completedAt()));
+                .append("completedAt", assignment.completedAt() == null ? null : toDate(assignment.completedAt()))
+                .append("assignedCollectionRequestIds", assignment.assignedCollectionRequestIds())
+                .append("completedCollectionRequestIds", assignment.completedCollectionRequestIds());
     }
 
     private RouteAssignment fromAssignmentDocument(Document doc) {
@@ -161,7 +163,9 @@ public class SavedRouteRepository {
                 RouteAssignmentStatus.valueOf(doc.getString("status")),
                 toLocalDateTime(doc.getDate("assignedAt")),
                 toLocalDateTime(doc.getDate("startedAt")),
-                toLocalDateTime(doc.getDate("completedAt"))
+                toLocalDateTime(doc.getDate("completedAt")),
+                doc.getList("assignedCollectionRequestIds", String.class, List.of()),
+                doc.getList("completedCollectionRequestIds", String.class, List.of())
         );
     }
 
@@ -238,7 +242,12 @@ public class SavedRouteRepository {
                 .append("longitude", stop.longitude())
                 .append("demand", stop.demand())
                 .append("accumulatedLoad", stop.accumulatedLoad())
-                .append("distanceFromPreviousMeters", stop.distanceFromPreviousMeters());
+                .append("distanceFromPreviousMeters", stop.distanceFromPreviousMeters())
+                .append("street", stop.street())
+                .append("number", stop.number())
+                .append("city", stop.city())
+                .append("state", stop.state())
+                .append("zipCode", stop.zipCode());
     }
 
     private RouteStop fromStopDocument(Document doc) {
@@ -250,7 +259,12 @@ public class SavedRouteRepository {
                 number(doc.get("longitude")).doubleValue(),
                 number(doc.get("demand")).doubleValue(),
                 number(doc.get("accumulatedLoad")).doubleValue(),
-                number(doc.get("distanceFromPreviousMeters")).longValue()
+                number(doc.get("distanceFromPreviousMeters")).longValue(),
+                doc.getString("street"),
+                doc.getString("number"),
+                doc.getString("city"),
+                doc.getString("state"),
+                doc.getString("zipCode")
         );
     }
 

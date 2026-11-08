@@ -14,16 +14,20 @@ import org.example.application.deliveryman.DeliverymanModels.RouteAssignmentStat
 import org.example.application.deliveryman.DeliverymanModels.SyncDeliverymanCommand;
 import org.example.application.port.out.DeliveryRouteAssignmentPort;
 import org.example.application.port.out.DeliveryRouteLogPort;
+import org.example.application.port.out.CollectionRequestPort;
 import org.example.application.port.out.AuthenticatedActorPort;
+import org.example.application.port.out.EventPort;
 import org.example.application.port.out.DeliverymanDirectoryPort;
 import org.example.application.port.out.DeliverymanPort;
 import org.example.application.port.out.SavedRoutePort;
 import org.example.application.route.RouteModels.RoutePlan;
 import org.example.application.route.RouteModels.RouteStop;
 import org.example.application.route.SavedRouteModels.SavedRouteStatus;
+import org.example.infrastructure.event.CollectionEvent;
 import org.example.domain.entity.CollectionRequest;
 
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 
@@ -33,6 +37,7 @@ public class DeliverymanUseCase {
 
     @ConfigProperty(name = "completion-code.historical-cutover", defaultValue = "2026-11-07T00:00:00")
     LocalDateTime completionCodeHistoricalCutover = DEFAULT_COMPLETION_CODE_CUTOVER;
+
     @Inject
     DeliverymanPort deliverymanPort;
 
@@ -53,6 +58,15 @@ public class DeliverymanUseCase {
 
     @Inject
     AuthenticatedActorPort authenticatedActorPort;
+
+    @Inject
+    CollectionRequestPort collectionRequestPort;
+
+    @Inject
+    EventPort eventPort;
+
+    @Inject
+    CollectionStatusNotificationUseCase notificationUseCase;
 
     public Uni<Void> syncDeliveryman(SyncDeliverymanCommand command) {
         validateRequired(command == null ? null : command.id(), "deliverymanId");
@@ -106,36 +120,97 @@ public class DeliverymanUseCase {
                     if (stopIds.isEmpty()) {
                         return Uni.createFrom().failure(new IllegalStateException("Saved route vehicle has no stops"));
                     }
-                    return deliverymanDirectoryPort.findById(command.deliverymanId())
-                            .onItem().ifNull().failWith(() -> new IllegalArgumentException("Deliveryman not found: " + command.deliverymanId()))
-                            .flatMap(deliveryman -> {
-                                if (!Objects.equals(deliveryman.collectorId(), command.collectorId())) {
-                                    return Uni.createFrom().failure(new IllegalStateException("Deliveryman does not belong to collector"));
+                    return areAllStopsCompleted(stopIds)
+                            .flatMap(allCompleted -> {
+                                if (allCompleted) {
+                                    return Uni.createFrom().failure(new IllegalStateException("All collections for this vehicle are already completed"));
                                 }
-                                if (!deliveryman.active()) {
-                                    return Uni.createFrom().failure(new IllegalStateException("Deliveryman is not active"));
-                                }
-                                return assignmentPort.findOpenBySavedRouteIdAndVehicleIndex(command.savedRouteId(), vehicleIndex)
-                                        .flatMap(existing -> {
-                                            if (existing != null) {
-                                                if (Objects.equals(existing.deliverymanId(), command.deliverymanId())) {
-                                                    return Uni.createFrom().item(existing);
-                                                }
-                                                DeliveryRouteAssignment reassigned = existing.reassign(command.deliverymanId(), LocalDateTime.now());
-                                                return assignmentPort.update(reassigned).replaceWith(reassigned);
+                                return deliverymanDirectoryPort.findById(command.deliverymanId())
+                                        .onItem().ifNull().failWith(() -> new IllegalArgumentException("Deliveryman not found: " + command.deliverymanId()))
+                                        .flatMap(deliveryman -> {
+                                            if (!Objects.equals(deliveryman.collectorId(), command.collectorId())) {
+                                                return Uni.createFrom().failure(new IllegalStateException("Deliveryman does not belong to collector"));
                                             }
-                                            DeliveryRouteAssignment assignment = DeliveryRouteAssignment.create(
-                                                    command.collectorId(),
-                                                    command.deliverymanId(),
-                                                    command.savedRouteId(),
-                                                    vehicleIndex,
-                                                    stopIds,
-                                                    LocalDateTime.now()
-                                            );
-                                            return assignmentPort.save(assignment).replaceWith(assignment);
+                                            if (!deliveryman.active()) {
+                                                return Uni.createFrom().failure(new IllegalStateException("Deliveryman is not active"));
+                                            }
+                                            return ensureStopsNotAssignedElsewhere(stopIds, command.savedRouteId(), vehicleIndex, 0)
+                                                    .flatMap(ignored -> assignmentPort.findOpenBySavedRouteIdAndVehicleIndex(command.savedRouteId(), vehicleIndex))
+                                                    .flatMap(existing -> {
+                                                        boolean savedAssignmentCompleted = savedRoute.assignments() != null
+                                                                && savedRoute.assignments().stream()
+                                                                .filter(item -> item.vehicleIndex() == vehicleIndex)
+                                                                .anyMatch(item -> item.status() == org.example.application.route.SavedRouteModels.RouteAssignmentStatus.COMPLETED
+                                                                        || item.completedCollectionRequestIds().containsAll(stopIds));
+                                                        if (savedAssignmentCompleted) {
+                                                            return Uni.createFrom().failure(new IllegalStateException("All collections for this vehicle are already completed"));
+                                                        }
+                                                        if (existing != null && existing.completedCollectionRequestIds().containsAll(stopIds)) {
+                                                            return Uni.createFrom().failure(new IllegalStateException("All collections for this vehicle are already completed"));
+                                                        }
+                                                        if (existing != null && isTerminal(existing.status())) {
+                                                            return Uni.createFrom().failure(new IllegalStateException("This vehicle route already has a completed assignment"));
+                                                        }
+                                                        if (existing != null) {
+                                                            if (Objects.equals(existing.deliverymanId(), command.deliverymanId())) {
+                                                                return Uni.createFrom().item(existing);
+                                                            }
+                                                            DeliveryRouteAssignment reassigned = existing.reassign(command.deliverymanId(), LocalDateTime.now());
+                                                            return assignmentPort.update(reassigned).replaceWith(reassigned);
+                                                        }
+                                                        DeliveryRouteAssignment assignment = DeliveryRouteAssignment.create(
+                                                                command.collectorId(),
+                                                                command.deliverymanId(),
+                                                                command.savedRouteId(),
+                                                                vehicleIndex,
+                                                                stopIds,
+                                                                LocalDateTime.now()
+                                                        );
+                                                        return assignmentPort.save(assignment).replaceWith(assignment);
+                                                    });
                                         });
                             });
                 });
+    }
+
+    private Uni<Void> ensureStopsNotAssignedElsewhere(
+            List<String> stopIds,
+            String savedRouteId,
+            int vehicleIndex,
+            int stopIndex
+    ) {
+        if (stopIndex >= stopIds.size()) {
+            return Uni.createFrom().voidItem();
+        }
+
+        String collectionRequestId = stopIds.get(stopIndex);
+        return assignmentPort.findByCollectionRequestId(collectionRequestId)
+                .flatMap(assignments -> {
+                    boolean assignedToAnotherRoute = assignments != null && assignments.stream()
+                            .anyMatch(assignment -> !Objects.equals(assignment.savedRouteId(), savedRouteId)
+                                    || assignment.vehicleIndex() != vehicleIndex);
+                    if (assignedToAnotherRoute) {
+                        return Uni.createFrom().failure(new IllegalStateException(
+                                "Collection request is already assigned to another delivery route: " + collectionRequestId));
+                    }
+                    return ensureStopsNotAssignedElsewhere(stopIds, savedRouteId, vehicleIndex, stopIndex + 1);
+                });
+    }
+
+    private Uni<Boolean> areAllStopsCompleted(List<String> stopIds) {
+        if (collectionRequestPort == null) {
+            return Uni.createFrom().item(false);
+        }
+        return collectionRequestPort.findByIds(stopIds)
+                .map(requests -> requests.size() == stopIds.size()
+                        && requests.stream().allMatch(request -> request != null && request.getStatus() == CollectionRequest.Status.COMPLETED));
+    }
+
+    private boolean isTerminal(RouteAssignmentStatus status) {
+        return status == RouteAssignmentStatus.COMPLETED
+                || status == RouteAssignmentStatus.PARTIALLY_COMPLETED
+                || status == RouteAssignmentStatus.FAILED
+                || status == RouteAssignmentStatus.CANCELLED;
     }
 
     public Uni<List<DeliveryRouteAssignment>> listActiveAssignments(String deliverymanId) {
@@ -156,8 +231,31 @@ public class DeliverymanUseCase {
                     DeliveryRouteLog log = DeliveryRouteLog.create(started, null, RouteLogEventType.ROUTE_STARTED, null, null, now);
                     return assignmentPort.update(started)
                             .flatMap(it -> routeLogPort.append(log))
+                            .flatMap(it -> markStopsOnTheWay(started))
                             .replaceWith(started);
                 });
+    }
+
+    private Uni<Void> markStopsOnTheWay(DeliveryRouteAssignment assignment) {
+        return collectionRequestPort.findByIds(assignment.assignedCollectionRequestIds())
+                .flatMap(requests -> Uni.join().all(requests.stream().map(request -> {
+                    if (request == null || request.getStatus() != CollectionRequest.Status.IN_PROGRESS) {
+                        return Uni.createFrom().voidItem();
+                    }
+                    request.setStatus(CollectionRequest.Status.ON_THE_WAY);
+                    CollectionEvent event = new CollectionEvent();
+                    event.setEventType("COLLECTION_ON_THE_WAY");
+                    event.setRequestId(request.getId());
+                    event.setGeneratorId(request.getGeneratorId());
+                    event.setCollectorId(assignment.collectorId());
+                    event.setStatus(request.getStatus().toString());
+                    event.setTimestamp(Instant.now().toString());
+                    event.setActorType("DELIVERYMAN");
+                    event.setActorId(assignment.deliverymanId());
+                    return collectionRequestPort.update(request)
+                            .flatMap(ignored -> eventPort.publishCollectionEvent(event))
+                            .flatMap(ignored -> notificationUseCase.notifyGenerator(request, "COLLECTION_ON_THE_WAY"));
+                }).toList()).andFailFast().replaceWithVoid());
     }
 
     public Uni<DeliveryRouteAssignment> completeAssignedStop(String deliverymanId, String assignmentId, String collectionRequestId) {

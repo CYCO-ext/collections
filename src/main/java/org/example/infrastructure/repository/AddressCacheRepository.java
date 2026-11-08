@@ -60,8 +60,8 @@ public class AddressCacheRepository {
                 doc.getString("zipCode"),
                 doc.getString("number"),
                 doc.getString("state"),
-                doc.getDouble("latitude"),
-                doc.getDouble("longitude"),
+                MongoDocumentValues.asDouble(doc, "latitude"),
+                MongoDocumentValues.asDouble(doc, "longitude"),
                 null,
                 doc.getString("source")
         );

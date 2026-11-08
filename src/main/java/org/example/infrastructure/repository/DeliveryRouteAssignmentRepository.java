@@ -1,8 +1,10 @@
 package org.example.infrastructure.repository;
 
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Sorts;
 import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
+import io.quarkus.mongodb.FindOptions;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -49,9 +51,8 @@ public class DeliveryRouteAssignmentRepository {
         return getCollection()
                 .find(Filters.and(
                         Filters.eq("savedRouteId", savedRouteId),
-                        Filters.eq("vehicleIndex", vehicleIndex),
-                        Filters.in("status", List.of(RouteAssignmentStatus.ASSIGNED.toString(), RouteAssignmentStatus.IN_PROGRESS.toString()))
-                ))
+                        Filters.eq("vehicleIndex", vehicleIndex)
+                ), new FindOptions().sort(Sorts.descending("assignedAt")))
                 .collect().first()
                 .onItem().ifNotNull().transform(this::fromDocument);
     }

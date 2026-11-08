@@ -156,7 +156,12 @@ public class OrToolsRouteOptimizationAdapter implements RouteOptimizationPort {
                     stop.location().longitude(),
                     stop.demand(),
                     totalLoad,
-                    distanceFromPrevious
+                    distanceFromPrevious,
+                    stop.street(),
+                    stop.number(),
+                    stop.city(),
+                    stop.state(),
+                    stop.zipCode()
             ));
         }
 
@@ -310,7 +315,12 @@ public class OrToolsRouteOptimizationAdapter implements RouteOptimizationPort {
                                 candidate.location().longitude(),
                                 candidate.demand(),
                                 routeLoad,
-                                distanceFromPrevious
+                                distanceFromPrevious,
+                                candidate.street(),
+                                candidate.number(),
+                                candidate.city(),
+                                candidate.state(),
+                                candidate.zipCode()
                         ));
                     }
                 }

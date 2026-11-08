@@ -141,12 +141,9 @@ public final class DeliverymanModels {
             }
             List<String> nextCompleted = new java.util.ArrayList<>(completed);
             nextCompleted.add(collectionRequestId);
-            RouteAssignmentStatus nextStatus = nextCompleted.containsAll(assignedCollectionRequestIds)
-                    ? RouteAssignmentStatus.COMPLETED
-                    : RouteAssignmentStatus.IN_PROGRESS;
             return new DeliveryRouteAssignment(id, collectorId, deliverymanId, savedRouteId, vehicleIndex,
-                    nextStatus, assignedCollectionRequestIds, nextCompleted, assignedAt, startedAt,
-                    nextStatus == RouteAssignmentStatus.COMPLETED ? now : completedAt, now);
+                    RouteAssignmentStatus.IN_PROGRESS, assignedCollectionRequestIds, nextCompleted, assignedAt, startedAt,
+                    completedAt, now);
         }
 
         public DeliveryRouteAssignment finish(RouteAssignmentStatus outcome, LocalDateTime now) {

@@ -170,7 +170,6 @@ public class CollectionRequest {
 
     public boolean canMarkCompleted() {
         return (Status.IN_PROGRESS.equals(status) || Status.ON_THE_WAY.equals(status)) &&
-                Boolean.TRUE.equals(generatorConfirmed) &&
                 Boolean.TRUE.equals(collectorConfirmed) && completionEvidence != null;
     }
 

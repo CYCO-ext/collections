@@ -101,8 +101,8 @@ public class CollectorRepository {
                 addrDoc.getString("zipCode"),
                 addrDoc.getString("number"),
                 addrDoc.getString("state"),
-                addrDoc.getDouble("latitude"),
-                addrDoc.getDouble("longitude"),
+                MongoDocumentValues.asDouble(addrDoc, "latitude"),
+                MongoDocumentValues.asDouble(addrDoc, "longitude"),
                 addrDoc.getString("enrichmentStatus"),
                 addrDoc.getString("enrichmentSource")
         );
@@ -113,7 +113,7 @@ public class CollectorRepository {
         collector.setName(doc.getString("name"));
         collector.setAddress(address);
         collector.setAcceptedMaterialIds(doc.getList("acceptedMaterialIds", String.class));
-        collector.setAcceptanceRate(doc.getDouble("acceptanceRate"));
+        collector.setAcceptanceRate(MongoDocumentValues.asDouble(doc, "acceptanceRate"));
         return collector;
     }
 }

@@ -1,5 +1,7 @@
 package org.example.application.route;
 
+import org.example.domain.entity.Address;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -81,8 +83,22 @@ public final class RouteModels {
             String addressId,
             List<String> materialIds,
             double demand,
-            RouteLocation location
+            RouteLocation location,
+            String street,
+            String number,
+            String city,
+            String state,
+            String zipCode
     ) {
+        public RouteCandidateStop(
+                String collectionRequestId,
+                String addressId,
+                List<String> materialIds,
+                double demand,
+                RouteLocation location
+        ) {
+            this(collectionRequestId, addressId, materialIds, demand, location, null, null, null, null, null);
+        }
     }
 
     public record RouteOptimizationProblem(
@@ -104,8 +120,35 @@ public final class RouteModels {
             double longitude,
             double demand,
             double accumulatedLoad,
-            long distanceFromPreviousMeters
+            long distanceFromPreviousMeters,
+            String street,
+            String number,
+            String city,
+            String state,
+            String zipCode
     ) {
+        public RouteStop(
+                int sequence,
+                String collectionRequestId,
+                String addressId,
+                double latitude,
+                double longitude,
+                double demand,
+                double accumulatedLoad,
+                long distanceFromPreviousMeters
+        ) {
+            this(sequence, collectionRequestId, addressId, latitude, longitude, demand, accumulatedLoad,
+                    distanceFromPreviousMeters, null, null, null, null, null);
+        }
+
+        public RouteStop withAddress(Address address) {
+            if (address == null) {
+                return this;
+            }
+            return new RouteStop(sequence, collectionRequestId, addressId, latitude, longitude, demand,
+                    accumulatedLoad, distanceFromPreviousMeters, address.getStreet(), address.getNumber(),
+                    address.getCity(), address.getState(), address.getZipCode());
+        }
     }
 
     public record RoutePlan(
@@ -116,6 +159,9 @@ public final class RouteModels {
             long totalDistanceMeters,
             List<RouteStop> stops
     ) {
+        public RoutePlan withStops(List<RouteStop> updatedStops) {
+            return new RoutePlan(vehicleIndex, vehicleName, capacity, totalLoad, totalDistanceMeters, updatedStops);
+        }
     }
 
     public record UnassignedRouteStop(String collectionRequestId, UnassignedReason reason) {
@@ -135,6 +181,10 @@ public final class RouteModels {
             List<RoutePlan> routes,
             List<UnassignedRouteStop> unassigned
     ) {
+        public RouteOptimizationResult withRoutes(List<RoutePlan> updatedRoutes) {
+            return new RouteOptimizationResult(status, solver, updatedRoutes, unassigned);
+        }
+
         public RouteOptimizationResult withAdditionalUnassigned(List<UnassignedRouteStop> additional) {
             if (additional == null || additional.isEmpty()) {
                 return this;

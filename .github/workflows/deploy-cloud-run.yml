@@ -34,6 +34,10 @@ jobs:
           GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
           CA_PEM: ${{ secrets.CA_PEM }}
           FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+          QUARKUS_MONGODB_CONNECTION_STRING: ${{ secrets.QUARKUS_MONGODB_CONNECTION_STRING }}
+          QUARKUS_KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.QUARKUS_KAFKA_BOOTSTRAP_SERVERS }}
+          KAFKA_USERNAME: ${{ secrets.KAFKA_USERNAME }}
+          KAFKA_PASSWORD: ${{ secrets.KAFKA_PASSWORD }}
         run: |
           test -n "$GCP_PROJECT_ID" || (echo "Missing repository variable GCP_PROJECT_ID" && exit 1)
           test -n "$GCP_REGION" || (echo "Missing repository variable GCP_REGION" && exit 1)
@@ -44,6 +48,10 @@ jobs:
           test -n "$GCP_SERVICE_ACCOUNT" || (echo "Missing secret GCP_SERVICE_ACCOUNT" && exit 1)
           test -n "$CA_PEM" || (echo "Missing secret CA_PEM" && exit 1)
           test -n "$FIREBASE_CREDENTIALS_JSON" || (echo "Missing secret FIREBASE_CREDENTIALS_JSON" && exit 1)
+          test -n "$QUARKUS_MONGODB_CONNECTION_STRING" || (echo "Missing secret QUARKUS_MONGODB_CONNECTION_STRING" && exit 1)
+          test -n "$QUARKUS_KAFKA_BOOTSTRAP_SERVERS" || (echo "Missing secret QUARKUS_KAFKA_BOOTSTRAP_SERVERS" && exit 1)
+          test -n "$KAFKA_USERNAME" || (echo "Missing secret KAFKA_USERNAME" && exit 1)
+          test -n "$KAFKA_PASSWORD" || (echo "Missing secret KAFKA_PASSWORD" && exit 1)
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -75,11 +83,29 @@ jobs:
         run: docker push "$IMAGE"
 
       - name: Deploy to Cloud Run
+        env:
+          QUARKUS_MONGODB_CONNECTION_STRING: ${{ secrets.QUARKUS_MONGODB_CONNECTION_STRING }}
+          QUARKUS_KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.QUARKUS_KAFKA_BOOTSTRAP_SERVERS }}
+          KAFKA_USERNAME: ${{ secrets.KAFKA_USERNAME }}
+          KAFKA_PASSWORD: ${{ secrets.KAFKA_PASSWORD }}
         run: |
+          cat > cloud-run-env.yaml <<EOF
+          FIREBASE_ENABLED: "true"
+          FIREBASE_CREDENTIALS_PATH: "/app/credentials.json"
+          FIREBASE_PROJECT_ID: "$GCP_PROJECT_ID"
+          FIREBASE_DRY_RUN: "false"
+          KAFKA_SSL_TRUSTSTORE_LOCATION: "/app/ca.pem"
+          QUARKUS_MONGODB_CONNECTION_STRING: "$QUARKUS_MONGODB_CONNECTION_STRING"
+          QUARKUS_KAFKA_BOOTSTRAP_SERVERS: "$QUARKUS_KAFKA_BOOTSTRAP_SERVERS"
+          KAFKA_USERNAME: "$KAFKA_USERNAME"
+          KAFKA_PASSWORD: "$KAFKA_PASSWORD"
+          EOF
+
           gcloud run deploy "$CLOUD_RUN_SERVICE" \
             --project "$GCP_PROJECT_ID" \
             --region "$GCP_REGION" \
             --image "$IMAGE" \
             --platform managed \
             --allow-unauthenticated \
-            --update-env-vars "FIREBASE_ENABLED=true,FIREBASE_CREDENTIALS_PATH=/app/credentials.json,FIREBASE_PROJECT_ID=${GCP_PROJECT_ID},KAFKA_SSL_TRUSTSTORE_LOCATION=/app/ca.pem"
+            --env-vars-file cloud-run-env.yaml \
+            --timeout 300

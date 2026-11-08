@@ -86,8 +86,8 @@ public class AddressRepository {
                 doc.getString("zipCode"),
                 doc.getString("number"),
                 doc.getString("state"),
-                doc.getDouble("latitude"),
-                doc.getDouble("longitude"),
+                MongoDocumentValues.asDouble(doc, "latitude"),
+                MongoDocumentValues.asDouble(doc, "longitude"),
                 doc.getString("enrichmentStatus"),
                 doc.getString("enrichmentSource")
         );

@@ -9,6 +9,7 @@ import org.example.application.deliveryman.DeliverymanModels.RouteAssignmentStat
 import org.example.application.deliveryman.DeliverymanModels.RouteLogEventType;
 import org.example.application.port.out.DeliveryRouteAssignmentPort;
 import org.example.application.port.out.DeliveryRouteLogPort;
+import org.example.application.port.out.CollectionRequestPort;
 import org.example.application.port.out.DeliverymanDirectoryPort;
 import org.example.application.port.out.DeliverymanDirectoryPort.DeliverymanRef;
 import org.example.application.port.out.DeliverymanPort;
@@ -34,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -59,6 +61,9 @@ class DeliverymanUseCaseTest {
     @Mock
     CompletionUseCase completionUseCase;
 
+    @Mock
+    CollectionRequestPort collectionRequestPort;
+
     @BeforeEach
     void setUp() {
         useCase = new DeliverymanUseCase();
@@ -68,6 +73,9 @@ class DeliverymanUseCaseTest {
         useCase.routeLogPort = routeLogPort;
         useCase.savedRoutePort = savedRoutePort;
         useCase.completionUseCase = completionUseCase;
+        useCase.collectionRequestPort = collectionRequestPort;
+        lenient().when(collectionRequestPort.findByIds(any()))
+                .thenReturn(Uni.createFrom().item(List.of()));
     }
 
     @Test
@@ -206,6 +214,7 @@ class DeliverymanUseCaseTest {
         when(assignmentPort.findById("assignment-1")).thenReturn(Uni.createFrom().item(assignment));
         when(assignmentPort.update(any())).thenReturn(Uni.createFrom().voidItem());
         when(routeLogPort.append(any())).thenReturn(Uni.createFrom().voidItem());
+        when(collectionRequestPort.findByIds(any())).thenReturn(Uni.createFrom().item(List.of()));
 
         DeliveryRouteAssignment result = useCase.startAssignment("deliveryman-1", "assignment-1").await().indefinitely();
 

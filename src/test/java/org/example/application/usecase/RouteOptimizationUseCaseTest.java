@@ -63,7 +63,9 @@ class RouteOptimizationUseCaseTest {
                 .thenReturn(new RouteOptimizationResult(
                         SolverStatus.FEASIBLE,
                         new SolverMetadata("TEST", 1, 10, 0),
-                        List.of(new RoutePlan(0, "Truck A", 20.0, 10.0, 10, List.of())),
+                        List.of(new RoutePlan(0, "Truck A", 20.0, 10.0, 10, List.of(
+                                new RouteStop(1, "request-1", "address-1", -23.5605, -46.6433, 10.0, 10.0, 10)
+                        ))),
                         List.of()
                 ));
 

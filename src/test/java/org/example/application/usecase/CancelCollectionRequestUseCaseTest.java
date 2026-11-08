@@ -114,6 +114,21 @@ class CancelCollectionRequestUseCaseTest {
     }
 
     @Test
+    void concurrentChangeDuringCancellationReturnsConflictWithoutPublishingEffects() {
+        CollectionRequest request = request(CollectionRequest.Status.IN_PROGRESS, "generator-1", "collector-1");
+        when(collectionRequestPort.findById("request-1")).thenReturn(Uni.createFrom().item(request));
+        when(collectionRequestPort.update(request)).thenReturn(Uni.createFrom().failure(
+                new ConcurrentCollectionRequestModificationException("request-1")));
+
+        CollectionCancellationConflictException exception = assertThrows(CollectionCancellationConflictException.class,
+                () -> useCase.cancelByGenerator("request-1", "generator-1").await().indefinitely());
+
+        assertEquals("Request changed while cancellation was in progress", exception.getMessage());
+        verify(eventPort, never()).publishCollectionEvent(org.mockito.ArgumentMatchers.any());
+        verify(notificationUseCase, never()).notifyGenerator(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void completedRequestCannotBeCancelled() {
         CollectionRequest request = request(CollectionRequest.Status.COMPLETED, "generator-1", "collector-1");
         when(collectionRequestPort.findById("request-1")).thenReturn(Uni.createFrom().item(request));

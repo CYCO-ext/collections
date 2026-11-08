@@ -21,6 +21,7 @@ public class CollectionRequest {
     private Boolean collectorConfirmed;
     private CompletionCodeState completionCode;
     private CompletionEvidence completionEvidence;
+    private long revision;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -148,6 +149,15 @@ public class CollectionRequest {
     public void setCompletionEvidence(CompletionEvidence completionEvidence) {
         this.completionEvidence = completionEvidence;
         this.updatedAt = LocalDateTime.now();
+    }
+
+    public long getRevision() {
+        return revision;
+    }
+
+    public void setRevision(long revision) {
+        if (revision < 0) throw new IllegalArgumentException("revision cannot be negative");
+        this.revision = revision;
     }
 
     public boolean canStartCollection() {

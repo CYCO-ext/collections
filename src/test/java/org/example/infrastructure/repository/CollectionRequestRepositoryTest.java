@@ -7,6 +7,7 @@ import jakarta.inject.Inject;
 import org.example.domain.entity.CollectionRequest;
 import org.example.domain.entity.CompletionCodeState;
 import org.example.domain.entity.CompletionEvidence;
+import org.example.application.usecase.ConcurrentCollectionRequestModificationException;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
@@ -15,6 +16,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
@@ -84,6 +86,41 @@ class CollectionRequestRepositoryTest {
         assertEquals(List.of("ROUTE_PROGRESS", "ROUTE_CLOSE", "COLLECTION_EVENT", "NOTIFICATION"),
                 persisted.getCompletionEvidence().pendingEffects());
         assertFalse(repository.issueCompletionCodeIfAbsent(requestId, code("replacement", 2)).await().indefinitely());
+    }
+
+    @Test
+    void cancellationCommittedFirstRejectsConfirmation() {
+        String requestId = saveInProgressRequest();
+        repository.issueCompletionCodeIfAbsent(requestId, code("ciphertext", 1)).await().indefinitely();
+        CollectionRequest cancellation = repository.findById(requestId).await().indefinitely();
+
+        cancellation.setStatus(CollectionRequest.Status.CANCELLED);
+        repository.update(cancellation).await().indefinitely();
+
+        assertFalse(repository.completeWithCode(requestId, 1, evidence("must-not-complete"))
+                .await().indefinitely());
+        CollectionRequest persisted = repository.findById(requestId).await().indefinitely();
+        assertEquals(CollectionRequest.Status.CANCELLED, persisted.getStatus());
+        assertEquals(null, persisted.getCompletionEvidence());
+        assertFalse(persisted.getCompletionCode().isConsumed());
+    }
+
+    @Test
+    void confirmationCommittedFirstRejectsStaleCancellationWithoutLosingEvidence() {
+        String requestId = saveInProgressRequest();
+        repository.issueCompletionCodeIfAbsent(requestId, code("ciphertext", 1)).await().indefinitely();
+        CollectionRequest staleCancellation = repository.findById(requestId).await().indefinitely();
+
+        assertTrue(repository.completeWithCode(requestId, 1, evidence("completed-first"))
+                .await().indefinitely());
+        staleCancellation.setStatus(CollectionRequest.Status.CANCELLED);
+
+        assertThrows(ConcurrentCollectionRequestModificationException.class,
+                () -> repository.update(staleCancellation).await().indefinitely());
+        CollectionRequest persisted = repository.findById(requestId).await().indefinitely();
+        assertEquals(CollectionRequest.Status.COMPLETED, persisted.getStatus());
+        assertEquals("completed-first", persisted.getCompletionEvidence().completionId());
+        assertTrue(persisted.getCompletionCode().isConsumed());
     }
 
     private String saveInProgressRequest() {

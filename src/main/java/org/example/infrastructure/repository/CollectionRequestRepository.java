@@ -11,6 +11,7 @@ import jakarta.inject.Singleton;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.example.application.usecase.SearchCollectionsUseCase.CollectionSearchQuery;
+import org.example.application.usecase.ConcurrentCollectionRequestModificationException;
 import org.example.domain.entity.CollectionRequest;
 import org.example.domain.entity.CompletionCodeState;
 import org.example.domain.entity.CompletionEvidence;
@@ -43,10 +44,26 @@ public class CollectionRequestRepository {
     }
 
     public Uni<Void> update(CollectionRequest request) {
+        long expectedRevision = request.getRevision();
         Document doc = toDocument(request);
+        doc.put("revision", expectedRevision + 1);
+        Document filter = new Document("_id", request.getId());
+        if (expectedRevision == 0) {
+            filter.append("$or", List.of(
+                    new Document("revision", 0),
+                    new Document("revision", new Document("$exists", false))));
+        } else {
+            filter.append("revision", expectedRevision);
+        }
         return getCollection()
-                .replaceOne(Filters.eq("_id", request.getId()), doc)
-                .replaceWithVoid();
+                .replaceOne(filter, doc)
+                .flatMap(result -> {
+                    if (result.getMatchedCount() != 1) {
+                        return Uni.createFrom().failure(new ConcurrentCollectionRequestModificationException(request.getId()));
+                    }
+                    request.setRevision(expectedRevision + 1);
+                    return Uni.createFrom().voidItem();
+                });
     }
 
     public Uni<Boolean> issueCompletionCodeIfAbsent(String requestId, CompletionCodeState code) {
@@ -222,6 +239,8 @@ public class CollectionRequestRepository {
         request.setSelectedCollectorId(doc.getString("selectedCollectorId"));
         request.setGeneratorConfirmed(doc.getBoolean("generatorConfirmed"));
         request.setCollectorConfirmed(doc.getBoolean("collectorConfirmed"));
+        Object revision = doc.get("revision");
+        request.setRevision(revision instanceof Number number ? number.longValue() : 0L);
         Document code = doc.get("completionCode", Document.class);
         if (code != null) request.setCompletionCode(fromCompletionCode(code));
         Document completion = doc.get("completion", Document.class);

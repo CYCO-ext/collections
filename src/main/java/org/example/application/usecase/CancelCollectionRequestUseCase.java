@@ -51,6 +51,8 @@ public class CancelCollectionRequestUseCase {
                     validateStatus(request);
                     request.setStatus(CollectionRequest.Status.CANCELLED);
                     return collectionRequestPort.update(request)
+                            .onFailure(ConcurrentCollectionRequestModificationException.class)
+                            .transform(ex -> new CollectionCancellationConflictException("Request changed while cancellation was in progress"))
                             .flatMap(it -> publishCancellationEvent(request, actorType, actorId))
                             .flatMap(it -> notificationUseCase.notifyGenerator(request, "COLLECTION_CANCELLED"))
                             .invoke(() -> LOG.info("Collection request cancelled: {} actorType={} actorId={}", requestId, actorType, actorId));

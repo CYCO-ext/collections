@@ -6,8 +6,11 @@ import jakarta.inject.Singleton;
 import org.example.application.port.out.CollectionRequestPort;
 import org.example.application.usecase.SearchCollectionsUseCase.CollectionSearchQuery;
 import org.example.domain.entity.CollectionRequest;
+import org.example.domain.entity.CompletionCodeState;
+import org.example.domain.entity.CompletionEvidence;
 import org.example.infrastructure.repository.CollectionRequestRepository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Singleton
@@ -59,5 +62,22 @@ public class CollectionRequestAdapter implements CollectionRequestPort {
     @Override
     public Uni<List<CollectionRequest>> findBySelectedCollectorId(String collectorId) {
         return repository.findBySelectedCollectorId(collectorId);
+    }
+
+    @Override
+    public Uni<Boolean> issueCompletionCodeIfAbsent(String requestId, CompletionCodeState code) {
+        return repository.issueCompletionCodeIfAbsent(requestId, code);
+    }
+
+    @Override
+    public Uni<Boolean> incrementCompletionCodeAttempts(String requestId, int codeVersion,
+                                                         LocalDateTime now, LocalDateTime blockedUntil,
+                                                         int maxAttempts) {
+        return repository.incrementCompletionCodeAttempts(requestId, codeVersion, now, blockedUntil, maxAttempts);
+    }
+
+    @Override
+    public Uni<Boolean> completeWithCode(String requestId, int codeVersion, CompletionEvidence evidence) {
+        return repository.completeWithCode(requestId, codeVersion, evidence);
     }
 }

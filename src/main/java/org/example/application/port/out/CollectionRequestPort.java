@@ -3,7 +3,10 @@ package org.example.application.port.out;
 import io.smallrye.mutiny.Uni;
 import org.example.application.usecase.SearchCollectionsUseCase.CollectionSearchQuery;
 import org.example.domain.entity.CollectionRequest;
+import org.example.domain.entity.CompletionCodeState;
+import org.example.domain.entity.CompletionEvidence;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface CollectionRequestPort {
@@ -24,4 +27,11 @@ public interface CollectionRequestPort {
     Uni<List<CollectionRequest>> findInProgress(int limit);
 
     Uni<List<CollectionRequest>> findBySelectedCollectorId(String collectorId);
+
+    Uni<Boolean> issueCompletionCodeIfAbsent(String requestId, CompletionCodeState code);
+
+    Uni<Boolean> incrementCompletionCodeAttempts(String requestId, int codeVersion, LocalDateTime now,
+                                                  LocalDateTime blockedUntil, int maxAttempts);
+
+    Uni<Boolean> completeWithCode(String requestId, int codeVersion, CompletionEvidence evidence);
 }

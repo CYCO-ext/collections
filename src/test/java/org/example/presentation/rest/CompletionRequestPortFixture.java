@@ -7,7 +7,10 @@ import jakarta.enterprise.inject.Alternative;
 import org.example.application.port.out.CollectionRequestPort;
 import org.example.application.usecase.SearchCollectionsUseCase.CollectionSearchQuery;
 import org.example.domain.entity.CollectionRequest;
+import org.example.domain.entity.CompletionCodeState;
+import org.example.domain.entity.CompletionEvidence;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Alternative
@@ -23,4 +26,12 @@ public class CompletionRequestPortFixture implements CollectionRequestPort {
     @Override public Uni<List<CollectionRequest>> findByIds(List<String> ids) { return Uni.createFrom().item(List.of()); }
     @Override public Uni<List<CollectionRequest>> findInProgress(int limit) { return Uni.createFrom().item(List.of()); }
     @Override public Uni<List<CollectionRequest>> findBySelectedCollectorId(String id) { return Uni.createFrom().item(List.of()); }
+    @Override public Uni<Boolean> issueCompletionCodeIfAbsent(String id, CompletionCodeState code) { return Uni.createFrom().item(false); }
+    @Override public Uni<Boolean> incrementCompletionCodeAttempts(String id, int version, LocalDateTime now,
+                                                                    LocalDateTime blockedUntil, int maxAttempts) {
+        return Uni.createFrom().item(false);
+    }
+    @Override public Uni<Boolean> completeWithCode(String id, int version, CompletionEvidence evidence) {
+        return Uni.createFrom().item(false);
+    }
 }

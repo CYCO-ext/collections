@@ -79,6 +79,17 @@ class AesGcmCompletionCodeCryptoAdapterTest {
     }
 
     @Test
+    void noRetiredKeyRingSentinelAllowsStartupWithoutRetiredKeys() {
+        adapter.encryptionKeyRing = "none";
+
+        adapter.validateStartupConfiguration();
+
+        assertTrue(adapter.startupConfigurationAvailable);
+        EncryptedCode encrypted = adapter.encrypt("request-1", 1, "001234");
+        assertEquals("001234", adapter.decrypt("request-1", encrypted));
+    }
+
+    @Test
     void retiredEncryptionKeyRemainsReadableByKeyIdAfterRotation() {
         String oldKey = adapter.encryptionKey;
         EncryptedCode existing = adapter.encrypt("request-1", 1, "001234");

@@ -25,6 +25,7 @@ public class AesGcmCompletionCodeCryptoAdapter implements CompletionCodeCryptoPo
     private static final int NONCE_LENGTH_BYTES = 12;
     private static final int GCM_TAG_LENGTH_BITS = 128;
     private static final String MISSING_KEY = "unset";
+    private static final String NO_RETIRED_KEYS = "none";
 
     @ConfigProperty(name = "completion-code.encryption-key", defaultValue = MISSING_KEY)
     String encryptionKey;
@@ -35,7 +36,7 @@ public class AesGcmCompletionCodeCryptoAdapter implements CompletionCodeCryptoPo
     @ConfigProperty(name = "completion-code.key-id", defaultValue = MISSING_KEY)
     String keyId;
 
-    @ConfigProperty(name = "completion-code.encryption-key-ring", defaultValue = "")
+    @ConfigProperty(name = "completion-code.encryption-key-ring", defaultValue = NO_RETIRED_KEYS)
     String encryptionKeyRing;
 
     boolean startupConfigurationAvailable;
@@ -152,7 +153,8 @@ public class AesGcmCompletionCodeCryptoAdapter implements CompletionCodeCryptoPo
 
     private Map<String, String> parseEncryptionKeyRing() {
         Map<String, String> keys = new HashMap<>();
-        if (encryptionKeyRing == null || encryptionKeyRing.isBlank()) return keys;
+        if (encryptionKeyRing == null || encryptionKeyRing.isBlank() ||
+                NO_RETIRED_KEYS.equalsIgnoreCase(encryptionKeyRing.trim())) return keys;
         for (String entry : encryptionKeyRing.split(",", -1)) {
             int separator = entry.indexOf(':');
             if (separator < 1 || separator == entry.length() - 1) {

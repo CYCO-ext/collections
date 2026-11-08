@@ -13,6 +13,7 @@ import org.example.application.deliveryman.DeliverymanModels.RouteAssignmentStat
 import org.example.application.deliveryman.DeliverymanModels.SyncDeliverymanCommand;
 import org.example.application.port.out.DeliveryRouteAssignmentPort;
 import org.example.application.port.out.DeliveryRouteLogPort;
+import org.example.application.port.out.AuthenticatedActorPort;
 import org.example.application.port.out.DeliverymanDirectoryPort;
 import org.example.application.port.out.DeliverymanPort;
 import org.example.application.port.out.SavedRoutePort;
@@ -43,6 +44,9 @@ public class DeliverymanUseCase {
 
     @Inject
     CompletionUseCase completionUseCase;
+
+    @Inject
+    AuthenticatedActorPort authenticatedActorPort;
 
     public Uni<Void> syncDeliveryman(SyncDeliverymanCommand command) {
         validateRequired(command == null ? null : command.id(), "deliverymanId");
@@ -149,22 +153,48 @@ public class DeliverymanUseCase {
     }
 
     public Uni<DeliveryRouteAssignment> completeAssignedStop(String deliverymanId, String assignmentId, String collectionRequestId) {
+        return Uni.createFrom().failure(new CompletionCodeConflictException(
+                "COMPLETION_CODE_REQUIRED", "A valid completion code is required to complete a delivery stop"));
+    }
+
+    public Uni<DeliveryRouteAssignment> completeAssignedStop(
+            String deliverymanId,
+            String assignmentId,
+            String collectionRequestId,
+            String bearerToken,
+            String code,
+            String idempotencyKey
+    ) {
         validateRequired(collectionRequestId, "collectionRequestId");
-        return loadAssignmentForDeliveryman(deliverymanId, assignmentId)
-                .flatMap(assignment -> {
-                    if (!assignment.assignedCollectionRequestIds().contains(collectionRequestId)) {
-                        return Uni.createFrom().failure(new IllegalStateException("Collection request is not assigned to deliveryman"));
+        return authenticatedActorPort.resolve(bearerToken)
+                .flatMap(actor -> {
+                    if (actor == null || !"DELIVERYMAN".equals(actor.role())
+                            || !Objects.equals(actor.deliverymanId(), deliverymanId)) {
+                        return Uni.createFrom().failure(new CompletionCodeForbiddenException());
                     }
-                    LocalDateTime now = LocalDateTime.now();
-                    DeliveryRouteAssignment current = assignment.status() == RouteAssignmentStatus.ASSIGNED
-                            ? assignment.start(now)
-                            : assignment;
-                    DeliveryRouteAssignment updated = current.completeStop(collectionRequestId, now);
-                    DeliveryRouteLog log = DeliveryRouteLog.create(updated, collectionRequestId, RouteLogEventType.STOP_COMPLETED, null, null, now);
-                    return assignmentPort.update(updated)
-                            .flatMap(it -> routeLogPort.append(log))
-                            .flatMap(it -> completionUseCase.confirmCollectorCompletion(collectionRequestId))
-                            .replaceWith(updated);
+                    return loadAssignmentForDeliverymanCompletion(deliverymanId, assignmentId)
+                            .flatMap(assignment -> {
+                                if (!assignment.assignedCollectionRequestIds().contains(collectionRequestId)) {
+                                    return Uni.createFrom().failure(new IllegalStateException("Collection request is not assigned to deliveryman"));
+                                }
+                                return completionUseCase.confirmDeliverymanWithCode(
+                                                collectionRequestId, bearerToken, code, idempotencyKey)
+                                        .flatMap(ignored -> assignmentPort.findById(assignmentId)
+                                                .onItem().ifNull().continueWith(assignment));
+                            });
+                });
+    }
+
+    private Uni<DeliveryRouteAssignment> loadAssignmentForDeliverymanCompletion(String deliverymanId, String assignmentId) {
+        validateRequired(deliverymanId, "deliverymanId");
+        validateRequired(assignmentId, "assignmentId");
+        return assignmentPort.findById(assignmentId)
+                .onItem().ifNull().failWith(() -> new IllegalArgumentException("Assignment not found: " + assignmentId))
+                .flatMap(assignment -> {
+                    if (!Objects.equals(assignment.deliverymanId(), deliverymanId)) {
+                        return Uni.createFrom().failure(new IllegalStateException("Assignment does not belong to deliveryman"));
+                    }
+                    return Uni.createFrom().item(assignment);
                 });
     }
 

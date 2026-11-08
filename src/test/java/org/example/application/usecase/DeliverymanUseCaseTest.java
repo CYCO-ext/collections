@@ -10,6 +10,7 @@ import org.example.application.deliveryman.DeliverymanModels.RouteLogEventType;
 import org.example.application.port.out.DeliveryRouteAssignmentPort;
 import org.example.application.port.out.DeliveryRouteLogPort;
 import org.example.application.port.out.CollectionRequestPort;
+import org.example.application.port.out.AuthenticatedActorPort;
 import org.example.application.port.out.DeliverymanDirectoryPort;
 import org.example.application.port.out.DeliverymanDirectoryPort.DeliverymanRef;
 import org.example.application.port.out.DeliverymanPort;
@@ -36,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -62,6 +64,9 @@ class DeliverymanUseCaseTest {
     CompletionUseCase completionUseCase;
 
     @Mock
+    AuthenticatedActorPort authenticatedActorPort;
+
+    @Mock
     CollectionRequestPort collectionRequestPort;
 
     @BeforeEach
@@ -73,7 +78,11 @@ class DeliverymanUseCaseTest {
         useCase.routeLogPort = routeLogPort;
         useCase.savedRoutePort = savedRoutePort;
         useCase.completionUseCase = completionUseCase;
+        useCase.authenticatedActorPort = authenticatedActorPort;
         useCase.collectionRequestPort = collectionRequestPort;
+        lenient().when(authenticatedActorPort.resolve("bearer")).thenReturn(Uni.createFrom().item(
+                new AuthenticatedActorPort.AuthenticatedActor(
+                        "user-1", "DELIVERYMAN", null, null, "deliveryman-1", "collector-1")));
         lenient().when(collectionRequestPort.findByIds(any()))
                 .thenReturn(Uni.createFrom().item(List.of()));
     }
@@ -226,21 +235,79 @@ class DeliverymanUseCaseTest {
     }
 
     @Test
-    void completeAssignedStopAppendsLogAndUsesExistingCompletionRule() {
+    void completeAssignedStopValidatesCodeBeforeReturningReconciledAssignment() {
+        DeliveryRouteAssignment assignment = assignment(RouteAssignmentStatus.IN_PROGRESS, List.of());
+        DeliveryRouteAssignment completed = assignment(RouteAssignmentStatus.COMPLETED, List.of("request-1"));
+        when(assignmentPort.findById("assignment-1"))
+                .thenReturn(Uni.createFrom().item(assignment))
+                .thenReturn(Uni.createFrom().item(completed));
+        when(completionUseCase.confirmDeliverymanWithCode(
+                "request-1", "bearer", "001234", "00000000-0000-0000-0000-000000000001"))
+                .thenReturn(Uni.createFrom().item(new CompletionUseCase.CompletionResult("request-1", "COMPLETED", "completion-1")));
+
+        DeliveryRouteAssignment result = useCase.completeAssignedStop(
+                "deliveryman-1", "assignment-1", "request-1", "bearer", "001234",
+                "00000000-0000-0000-0000-000000000001").await().indefinitely();
+
+        assertEquals(RouteAssignmentStatus.COMPLETED, result.status());
+        assertEquals(List.of("request-1"), result.completedCollectionRequestIds());
+        var order = inOrder(completionUseCase, assignmentPort);
+        order.verify(completionUseCase).confirmDeliverymanWithCode(
+                "request-1", "bearer", "001234", "00000000-0000-0000-0000-000000000001");
+        order.verify(assignmentPort).findById("assignment-1");
+        verify(assignmentPort, never()).update(any());
+        verify(routeLogPort, never()).append(any());
+    }
+
+    @Test
+    void invalidCodeLeavesAssignmentAndSuccessLogUntouched() {
         DeliveryRouteAssignment assignment = assignment(RouteAssignmentStatus.IN_PROGRESS, List.of());
         when(assignmentPort.findById("assignment-1")).thenReturn(Uni.createFrom().item(assignment));
-        when(assignmentPort.update(any())).thenReturn(Uni.createFrom().voidItem());
-        when(routeLogPort.append(any())).thenReturn(Uni.createFrom().voidItem());
-        when(completionUseCase.confirmCollectorCompletion("request-1")).thenReturn(Uni.createFrom().voidItem());
+        when(completionUseCase.confirmDeliverymanWithCode(
+                "request-1", "bearer", "999999", "00000000-0000-0000-0000-000000000001"))
+                .thenReturn(Uni.createFrom().failure(new CompletionCodeValidationException(
+                        "CODE_INVALID", "Code is invalid", 422, null)));
 
-        DeliveryRouteAssignment result = useCase.completeAssignedStop("deliveryman-1", "assignment-1", "request-1").await().indefinitely();
+        assertThrows(CompletionCodeValidationException.class, () -> useCase.completeAssignedStop(
+                "deliveryman-1", "assignment-1", "request-1", "bearer", "999999",
+                "00000000-0000-0000-0000-000000000001").await().indefinitely());
 
-        assertEquals(List.of("request-1"), result.completedCollectionRequestIds());
-        ArgumentCaptor<DeliveryRouteLog> captor = ArgumentCaptor.forClass(DeliveryRouteLog.class);
-        verify(routeLogPort).append(captor.capture());
-        assertEquals(RouteLogEventType.STOP_COMPLETED, captor.getValue().eventType());
-        assertEquals("request-1", captor.getValue().collectionRequestId());
-        verify(completionUseCase).confirmCollectorCompletion("request-1");
+        verify(completionUseCase).confirmDeliverymanWithCode(any(), any(), any(), any());
+        verify(assignmentPort, never()).update(any());
+        verify(routeLogPort, never()).append(any());
+    }
+
+    @Test
+    void stopOutsideDeliverymanAssignmentDoesNotConsumeCodeAttempt() {
+        when(assignmentPort.findById("assignment-1"))
+                .thenReturn(Uni.createFrom().item(assignment(RouteAssignmentStatus.IN_PROGRESS, List.of())));
+
+        assertThrows(IllegalStateException.class, () -> useCase.completeAssignedStop(
+                "deliveryman-1", "assignment-1", "other-request", "bearer", "999999",
+                "00000000-0000-0000-0000-000000000001").await().indefinitely());
+
+        verify(completionUseCase, never()).confirmDeliverymanWithCode(any(), any(), any(), any());
+        verify(assignmentPort, never()).update(any());
+    }
+
+    @Test
+    void validIdempotentRetryWorksAfterAssignmentBecomesTerminal() {
+        DeliveryRouteAssignment terminal = assignment(RouteAssignmentStatus.COMPLETED, List.of("request-1"));
+        when(assignmentPort.findById("assignment-1"))
+                .thenReturn(Uni.createFrom().item(terminal))
+                .thenReturn(Uni.createFrom().item(terminal));
+        when(completionUseCase.confirmDeliverymanWithCode(
+                "request-1", "bearer", "001234", "00000000-0000-0000-0000-000000000001"))
+                .thenReturn(Uni.createFrom().item(new CompletionUseCase.CompletionResult("request-1", "COMPLETED", "completion-1")));
+
+        DeliveryRouteAssignment result = useCase.completeAssignedStop(
+                "deliveryman-1", "assignment-1", "request-1", "bearer", "001234",
+                "00000000-0000-0000-0000-000000000001").await().indefinitely();
+
+        assertEquals(RouteAssignmentStatus.COMPLETED, result.status());
+        assertEquals("deliveryman-1", result.deliverymanId());
+        verify(completionUseCase).confirmDeliverymanWithCode(any(), any(), any(), any());
+        verify(assignmentPort, never()).update(any());
     }
 
     @Test

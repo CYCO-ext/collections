@@ -1,5 +1,6 @@
 package org.example.domain.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
@@ -133,6 +134,7 @@ public class CollectionRequest {
         this.updatedAt = updatedAt;
     }
 
+    @JsonIgnore
     public CompletionCodeState getCompletionCode() {
         return completionCode;
     }
@@ -142,6 +144,7 @@ public class CollectionRequest {
         this.updatedAt = LocalDateTime.now();
     }
 
+    @JsonIgnore
     public CompletionEvidence getCompletionEvidence() {
         return completionEvidence;
     }
@@ -151,6 +154,7 @@ public class CollectionRequest {
         this.updatedAt = LocalDateTime.now();
     }
 
+    @JsonIgnore
     public long getRevision() {
         return revision;
     }

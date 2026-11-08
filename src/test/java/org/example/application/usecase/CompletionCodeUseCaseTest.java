@@ -6,6 +6,8 @@ import org.example.application.port.out.CompletionCodeCryptoPort;
 import org.example.application.port.out.CollectionRequestPort;
 import org.example.domain.entity.CollectionRequest;
 import org.example.domain.entity.CompletionCodeState;
+import org.jboss.logmanager.ExtLogRecord;
+import org.jboss.logmanager.Logger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,7 +19,6 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.logging.Handler;
 import java.util.logging.LogRecord;
-import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -114,7 +115,10 @@ class CompletionCodeUseCaseTest {
         List<String> messages = new ArrayList<>();
         Logger logger = Logger.getLogger(CompletionCodeUseCase.class.getName());
         Handler handler = new Handler() {
-            @Override public void publish(LogRecord record) { messages.add(record.getMessage()); }
+            @Override public void publish(LogRecord record) {
+                assertTrue(record instanceof ExtLogRecord, "SLF4J log should reach the JBoss LogManager backend");
+                messages.add(((ExtLogRecord) record).getFormattedMessage());
+            }
             @Override public void flush() { }
             @Override public void close() { }
         };

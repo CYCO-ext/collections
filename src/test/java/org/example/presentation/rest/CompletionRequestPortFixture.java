@@ -12,26 +12,68 @@ import org.example.domain.entity.CompletionEvidence;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Alternative
 @Priority(1)
 @ApplicationScoped
 public class CompletionRequestPortFixture implements CollectionRequestPort {
+    private final Map<String, CollectionRequest> requests = new ConcurrentHashMap<>();
+
+    public void seed(CollectionRequest request) {
+        requests.put(request.getId(), request);
+    }
+
+    public void clear() {
+        requests.clear();
+    }
+
     @Override public Uni<Void> save(CollectionRequest request) { return Uni.createFrom().voidItem(); }
     @Override public Uni<Void> update(CollectionRequest request) { return Uni.createFrom().voidItem(); }
-    @Override public Uni<CollectionRequest> findById(String id) { return Uni.createFrom().nullItem(); }
+    @Override public Uni<CollectionRequest> findById(String id) { return Uni.createFrom().item(requests.get(id)); }
     @Override public Uni<List<CollectionRequest>> findByGeneratorId(String id) { return Uni.createFrom().item(List.of()); }
     @Override public Uni<List<CollectionRequest>> findByStatus(String status) { return Uni.createFrom().item(List.of()); }
     @Override public Uni<List<CollectionRequest>> search(CollectionSearchQuery query) { return Uni.createFrom().item(List.of()); }
     @Override public Uni<List<CollectionRequest>> findByIds(List<String> ids) { return Uni.createFrom().item(List.of()); }
     @Override public Uni<List<CollectionRequest>> findInProgress(int limit) { return Uni.createFrom().item(List.of()); }
     @Override public Uni<List<CollectionRequest>> findBySelectedCollectorId(String id) { return Uni.createFrom().item(List.of()); }
-    @Override public Uni<Boolean> issueCompletionCodeIfAbsent(String id, CompletionCodeState code) { return Uni.createFrom().item(false); }
+    @Override public Uni<Boolean> issueCompletionCodeIfAbsent(String id, CompletionCodeState code) {
+        CollectionRequest request = requests.get(id);
+        if (request == null || request.getCompletionCode() != null || !isActive(request)) return Uni.createFrom().item(false);
+        request.setCompletionCode(code);
+        return Uni.createFrom().item(true);
+    }
     @Override public Uni<Boolean> incrementCompletionCodeAttempts(String id, int version, LocalDateTime now,
                                                                     LocalDateTime blockedUntil, int maxAttempts) {
-        return Uni.createFrom().item(false);
+        CollectionRequest request = requests.get(id);
+        CompletionCodeState current = request == null ? null : request.getCompletionCode();
+        if (current == null || current.version() != version || current.isConsumed() || current.isBlockedAt(now)) {
+            return Uni.createFrom().item(false);
+        }
+        int attempts = current.failedAttempts() + 1;
+        request.setCompletionCode(new CompletionCodeState(current.version(), current.ciphertext(), current.nonce(),
+                current.keyId(), current.verifier(), current.issuedAt(), attempts,
+                attempts >= maxAttempts ? blockedUntil : null, current.consumedAt()));
+        return Uni.createFrom().item(true);
     }
     @Override public Uni<Boolean> completeWithCode(String id, int version, CompletionEvidence evidence) {
-        return Uni.createFrom().item(false);
+        CollectionRequest request = requests.get(id);
+        CompletionCodeState current = request == null ? null : request.getCompletionCode();
+        if (current == null || current.version() != version || current.isConsumed() || !isActive(request)) {
+            return Uni.createFrom().item(false);
+        }
+        request.setCompletionCode(new CompletionCodeState(current.version(), current.ciphertext(), current.nonce(),
+                current.keyId(), current.verifier(), current.issuedAt(), current.failedAttempts(),
+                current.blockedUntil(), evidence.validatedAt()));
+        request.setCollectorConfirmed(true);
+        request.setCompletionEvidence(evidence);
+        request.setStatus(CollectionRequest.Status.COMPLETED);
+        return Uni.createFrom().item(true);
+    }
+
+    private boolean isActive(CollectionRequest request) {
+        return CollectionRequest.Status.IN_PROGRESS.equals(request.getStatus()) ||
+                CollectionRequest.Status.ON_THE_WAY.equals(request.getStatus());
     }
 }

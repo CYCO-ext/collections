@@ -49,15 +49,46 @@ public class CompletionUseCase {
             String submittedCode,
             String idempotencyKey
     ) {
+        return confirmWithCode(requestId, bearerToken, submittedCode, idempotencyKey, null);
+    }
+
+    public Uni<CompletionResult> confirmCollectorWithCode(
+            String requestId,
+            String bearerToken,
+            String submittedCode,
+            String idempotencyKey
+    ) {
+        return confirmWithCode(requestId, bearerToken, submittedCode, idempotencyKey, "WASTE_COLLECTOR");
+    }
+
+    public Uni<CompletionResult> confirmDeliverymanWithCode(
+            String requestId,
+            String bearerToken,
+            String submittedCode,
+            String idempotencyKey
+    ) {
+        return confirmWithCode(requestId, bearerToken, submittedCode, idempotencyKey, "DELIVERYMAN");
+    }
+
+    private Uni<CompletionResult> confirmWithCode(
+            String requestId,
+            String bearerToken,
+            String submittedCode,
+            String idempotencyKey,
+            String requiredRole
+    ) {
         if (requestId == null || requestId.isBlank()) {
             return Uni.createFrom().failure(new IllegalArgumentException("requestId is required"));
         }
         if (!isUuid(idempotencyKey)) {
             return Uni.createFrom().failure(new IllegalArgumentException("Idempotency-Key must be a UUID"));
         }
-        String normalizedCode = CompletionCodeState.normalizeInput(submittedCode)
-                .orElseThrow(() -> new CompletionCodeValidationException(
-                        "CODE_FORMAT_INVALID", "Code must contain exactly six ASCII digits", 400, null));
+        java.util.Optional<String> normalized = CompletionCodeState.normalizeInput(submittedCode);
+        if (normalized.isEmpty()) {
+            return Uni.createFrom().failure(new CompletionCodeValidationException(
+                    "CODE_FORMAT_INVALID", "Code must contain exactly six ASCII digits", 400, null));
+        }
+        String normalizedCode = normalized.orElseThrow();
         if (bearerToken == null || bearerToken.isBlank()) {
             return Uni.createFrom().failure(new CompletionCodeUnauthenticatedException());
         }
@@ -65,9 +96,9 @@ public class CompletionUseCase {
                 .onFailure(org.example.infrastructure.identity.RegisterAuthenticatedActorAdapter.ActorUnauthenticatedException.class)
                 .transform(ignored -> new CompletionCodeUnauthenticatedException())
                 .flatMap(actor -> collectionRequestPort.findById(requestId)
-                        .onItem().ifNull().failWith(() -> new IllegalArgumentException("Request not found: " + requestId))
+                        .onItem().ifNull().failWith(() -> new CollectionRequestNotFoundException("Request not found: " + requestId))
                         .flatMap(request -> {
-                            String profileId = authorizeCompletionActor(actor, request);
+                            String profileId = authorizeCompletionActor(actor, request, requiredRole);
                             CompletionCodeState codeState = request.getCompletionCode();
                             if (CollectionRequest.Status.COMPLETED.equals(request.getStatus()) &&
                                     request.getCompletionEvidence() != null) {
@@ -192,12 +223,18 @@ public class CompletionUseCase {
                 "TOO_MANY_ATTEMPTS", "Too many invalid completion code attempts", 429, (int) Math.min(retryAfter, Integer.MAX_VALUE));
     }
 
-    private String authorizeCompletionActor(AuthenticatedActorPort.AuthenticatedActor actor, CollectionRequest request) {
+    private String authorizeCompletionActor(
+            AuthenticatedActorPort.AuthenticatedActor actor,
+            CollectionRequest request,
+            String requiredRole
+    ) {
         if (actor != null && "WASTE_COLLECTOR".equals(actor.role()) &&
+                (requiredRole == null || "WASTE_COLLECTOR".equals(requiredRole)) &&
                 Objects.equals(actor.collectorId(), request.getSelectedCollectorId())) {
             return actor.collectorId();
         }
         if (actor != null && "DELIVERYMAN".equals(actor.role()) &&
+                (requiredRole == null || "DELIVERYMAN".equals(requiredRole)) &&
                 Objects.equals(actor.ownerCollectorId(), request.getSelectedCollectorId()) &&
                 actor.deliverymanId() != null && !actor.deliverymanId().isBlank()) {
             return actor.deliverymanId();

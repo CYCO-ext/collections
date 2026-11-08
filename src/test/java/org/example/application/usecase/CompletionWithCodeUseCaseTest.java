@@ -205,7 +205,7 @@ class CompletionWithCodeUseCaseTest {
 
         CompletionCodeConflictException conflict = assertThrows(CompletionCodeConflictException.class,
                 () -> useCase.confirmWithCode(REQUEST_ID, BEARER, "654321", IDEMPOTENCY_KEY).await().indefinitely());
-        assertEquals("IDEMPOTENCY_KEY_CONFLICT", conflict.code());
+        assertEquals("IDEMPOTENCY_CONFLICT", conflict.code());
         verify(collectionRequestPort, never()).completeWithCode(any(), any(Integer.class), any());
     }
 

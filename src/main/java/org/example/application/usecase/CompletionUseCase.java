@@ -186,7 +186,7 @@ public class CompletionUseCase {
         }
         if (Objects.equals(evidence.idempotencyKey(), idempotencyKey)) {
             return Uni.createFrom().failure(new CompletionCodeConflictException(
-                    "IDEMPOTENCY_KEY_CONFLICT", "Idempotency-Key was already used with another payload"));
+                    "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with another payload"));
         }
         return Uni.createFrom().failure(new CompletionCodeConflictException(
                 "COLLECTION_ALREADY_COMPLETED", "Collection request is already completed"));

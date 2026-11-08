@@ -67,7 +67,7 @@ class CompletionResourceTest {
                 .body(new CompletionResource.ConfirmCollectorCompletionDTO("654321"))
                 .when().post("/api/requests/req-001/confirm-collector")
                 .then().statusCode(409)
-                .body("error.code", equalTo("IDEMPOTENCY_KEY_CONFLICT"));
+                .body("error.code", equalTo("IDEMPOTENCY_CONFLICT"));
     }
 
     @Test

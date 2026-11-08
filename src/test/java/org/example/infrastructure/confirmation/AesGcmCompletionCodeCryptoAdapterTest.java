@@ -23,6 +23,7 @@ class AesGcmCompletionCodeCryptoAdapterTest {
         for (int i = 0; i < hmacKey.length; i++) hmacKey[i] = (byte) (i + 1);
         adapter.hmacKey = Base64.getEncoder().encodeToString(hmacKey);
         adapter.keyId = "key-1";
+        adapter.encryptionKeyRing = "";
         adapter.secureRandom = new SecureRandom() {
             @Override public int nextInt(int bound) { return 7; }
             @Override public void nextBytes(byte[] bytes) { java.util.Arrays.fill(bytes, (byte) 9); }
@@ -67,9 +68,34 @@ class AesGcmCompletionCodeCryptoAdapterTest {
     @Test
     void missingKeysFailClosed() {
         adapter.encryptionKey = "unset";
+        adapter.validateStartupConfiguration();
+        assertFalse(adapter.startupConfigurationAvailable);
         assertThrows(IllegalStateException.class, () -> adapter.encrypt("request-1", 1, "001234"));
         adapter.encryptionKey = Base64.getEncoder().encodeToString(new byte[32]);
         adapter.hmacKey = "unset";
+        adapter.validateStartupConfiguration();
+        assertFalse(adapter.startupConfigurationAvailable);
         assertThrows(IllegalStateException.class, () -> adapter.createVerifier("request-1", 1, "001234"));
+    }
+
+    @Test
+    void retiredEncryptionKeyRemainsReadableByKeyIdAfterRotation() {
+        String oldKey = adapter.encryptionKey;
+        EncryptedCode existing = adapter.encrypt("request-1", 1, "001234");
+
+        AesGcmCompletionCodeCryptoAdapter rotated = new AesGcmCompletionCodeCryptoAdapter();
+        rotated.encryptionKey = Base64.getEncoder().encodeToString(new byte[]{1, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
+        rotated.hmacKey = adapter.hmacKey;
+        rotated.keyId = "key-2";
+        rotated.encryptionKeyRing = "key-1:" + oldKey;
+        rotated.secureRandom = adapter.secureRandom;
+
+        assertEquals("001234", rotated.decrypt("request-1", existing));
+        EncryptedCode issuedAfterRotation = rotated.encrypt("request-1", 2, "000007");
+        assertEquals("key-2", issuedAfterRotation.keyId());
+        assertEquals("000007", rotated.decrypt("request-1", issuedAfterRotation));
+        assertThrows(IllegalStateException.class,
+                () -> rotated.decrypt("request-1", new EncryptedCode(1, existing.ciphertext(), existing.nonce(), "unknown-key")));
     }
 }

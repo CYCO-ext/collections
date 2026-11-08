@@ -75,6 +75,20 @@ class CompletionCodeUseCaseTest {
     }
 
     @Test
+    void missingEncryptionKeyPreventsCodeIssuanceBeforePersistence() {
+        useCase.cryptoPort = new org.example.infrastructure.confirmation.AesGcmCompletionCodeCryptoAdapter();
+        CollectionRequest request = activeRequest();
+        when(collectionRequestPort.findById(REQUEST_ID)).thenReturn(Uni.createFrom().item(request));
+
+        assertThrows(IllegalStateException.class,
+                () -> useCase.issueOrRead(REQUEST_ID, "Bearer valid").await().indefinitely());
+
+        verify(collectionRequestPort, never())
+                .issueCompletionCodeIfAbsent(anyString(), any(CompletionCodeState.class));
+        assertEquals(null, request.getCompletionCode());
+    }
+
+    @Test
     void concurrentLoserReadsAndReturnsWinningCode() {
         CollectionRequest initial = activeRequest();
         CollectionRequest winner = activeRequest();

@@ -1,8 +1,11 @@
 package org.example.infrastructure.confirmation;
 
 import jakarta.inject.Singleton;
+import jakarta.annotation.PostConstruct;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.example.application.port.out.CompletionCodeCryptoPort;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
@@ -13,9 +16,12 @@ import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.HashMap;
+import java.util.Map;
 
 @Singleton
 public class AesGcmCompletionCodeCryptoAdapter implements CompletionCodeCryptoPort {
+    private static final Logger LOG = LoggerFactory.getLogger(AesGcmCompletionCodeCryptoAdapter.class);
     private static final int NONCE_LENGTH_BYTES = 12;
     private static final int GCM_TAG_LENGTH_BITS = 128;
     private static final String MISSING_KEY = "unset";
@@ -29,7 +35,26 @@ public class AesGcmCompletionCodeCryptoAdapter implements CompletionCodeCryptoPo
     @ConfigProperty(name = "completion-code.key-id", defaultValue = MISSING_KEY)
     String keyId;
 
+    @ConfigProperty(name = "completion-code.encryption-key-ring", defaultValue = "")
+    String encryptionKeyRing;
+
+    boolean startupConfigurationAvailable;
+
     SecureRandom secureRandom = new SecureRandom();
+
+    @PostConstruct
+    void validateStartupConfiguration() {
+        try {
+            requireKeyId();
+            decodeKey(encryptionKey, 32, "encryption");
+            decodeKey(hmacKey, 32, "HMAC");
+            parseEncryptionKeyRing();
+            startupConfigurationAvailable = true;
+        } catch (IllegalStateException ex) {
+            startupConfigurationAvailable = false;
+            LOG.warn("Completion code crypto unavailable at startup: {}", ex.getMessage());
+        }
+    }
 
     @Override
     public String generateCode() {
@@ -42,7 +67,7 @@ public class AesGcmCompletionCodeCryptoAdapter implements CompletionCodeCryptoPo
         secureRandom.nextBytes(nonce);
         try {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(decodeKey(encryptionKey, 32, "encryption"), "AES"),
+            cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(activeEncryptionKey(), "AES"),
                     new GCMParameterSpec(GCM_TAG_LENGTH_BITS, nonce));
             cipher.updateAAD(aad(requestId, version));
             byte[] ciphertext = cipher.doFinal(code.getBytes(StandardCharsets.US_ASCII));
@@ -55,12 +80,11 @@ public class AesGcmCompletionCodeCryptoAdapter implements CompletionCodeCryptoPo
     @Override
     public String decrypt(String requestId, EncryptedCode encryptedCode) {
         if (encryptedCode == null) throw new IllegalArgumentException("encryptedCode is required");
-        if (!requireKeyId().equals(encryptedCode.keyId())) throw new IllegalStateException("Unknown completion code key id");
         try {
             byte[] nonce = Base64.getUrlDecoder().decode(encryptedCode.nonce());
             if (nonce.length != NONCE_LENGTH_BYTES) throw new IllegalArgumentException("Invalid completion code nonce");
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(decodeKey(encryptionKey, 32, "encryption"), "AES"),
+            cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(encryptionKeyFor(encryptedCode.keyId()), "AES"),
                     new GCMParameterSpec(GCM_TAG_LENGTH_BITS, nonce));
             cipher.updateAAD(aad(requestId, encryptedCode.version()));
             return new String(cipher.doFinal(Base64.getUrlDecoder().decode(encryptedCode.ciphertext())), StandardCharsets.US_ASCII);
@@ -109,6 +133,39 @@ public class AesGcmCompletionCodeCryptoAdapter implements CompletionCodeCryptoPo
             throw new IllegalStateException("Completion code key id is unavailable");
         }
         return keyId;
+    }
+
+    private byte[] activeEncryptionKey() {
+        requireKeyId();
+        return decodeKey(encryptionKey, 32, "encryption");
+    }
+
+    private byte[] encryptionKeyFor(String requestedKeyId) {
+        if (requestedKeyId == null || requestedKeyId.isBlank()) {
+            throw new IllegalStateException("Completion code key id is unavailable");
+        }
+        if (requestedKeyId.equals(requireKeyId())) return activeEncryptionKey();
+        String retiredKey = parseEncryptionKeyRing().get(requestedKeyId);
+        if (retiredKey == null) throw new IllegalStateException("Unknown completion code key id");
+        return decodeKey(retiredKey, 32, "encryption");
+    }
+
+    private Map<String, String> parseEncryptionKeyRing() {
+        Map<String, String> keys = new HashMap<>();
+        if (encryptionKeyRing == null || encryptionKeyRing.isBlank()) return keys;
+        for (String entry : encryptionKeyRing.split(",", -1)) {
+            int separator = entry.indexOf(':');
+            if (separator < 1 || separator == entry.length() - 1) {
+                throw new IllegalStateException("Completion code encryption key ring has invalid format");
+            }
+            String retiredKeyId = entry.substring(0, separator).trim();
+            String value = entry.substring(separator + 1).trim();
+            if (retiredKeyId.isBlank() || retiredKeyId.equals(keyId) || keys.putIfAbsent(retiredKeyId, value) != null) {
+                throw new IllegalStateException("Completion code encryption key ring has invalid key ids");
+            }
+            decodeKey(value, 32, "retired encryption");
+        }
+        return keys;
     }
 
     private byte[] decodeKey(String value, int expectedBytes, String purpose) {

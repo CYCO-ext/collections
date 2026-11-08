@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.lenient;
@@ -92,6 +93,20 @@ class CompletionWithCodeUseCaseTest {
         verify(eventPort, never()).publishCollectionEvent(any());
         verify(closeSavedRoutesUseCase, never()).closeRoutesContaining(any());
         verify(notificationUseCase, never()).notifyGenerator(any(), any());
+    }
+
+    @Test
+    void missingHmacKeyPreventsConfirmationWithoutConsumingAttemptOrCompleting() {
+        useCase.cryptoPort = new org.example.infrastructure.confirmation.AesGcmCompletionCodeCryptoAdapter();
+
+        assertThrows(IllegalStateException.class,
+                () -> useCase.confirmCollectorWithCode(REQUEST_ID, BEARER, "001234", IDEMPOTENCY_KEY)
+                        .await().indefinitely());
+
+        verify(collectionRequestPort, never())
+                .incrementCompletionCodeAttempts(any(), any(Integer.class), any(), any(), any(Integer.class));
+        verify(collectionRequestPort, never()).completeWithCode(any(), anyInt(), any(CompletionEvidence.class));
+        verify(completionEffectsUseCase, never()).processCompletion(any(), any());
     }
 
     @Test

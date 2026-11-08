@@ -42,6 +42,23 @@ class CollectionRequestRepositoryTest {
     }
 
     @Test
+    void issuedCodeCanBeReloadedAsActiveStateWithItsEncryptionKeyId() {
+        String requestId = saveInProgressRequest();
+        CompletionCodeState issued = new CompletionCodeState(2, "authenticated-ciphertext", "nonce", "retired-key-1",
+                "hmac-verifier", LocalDateTime.now(), 0, null, null);
+
+        assertTrue(repository.issueCompletionCodeIfAbsent(requestId, issued).await().indefinitely());
+        CollectionRequest reloaded = repository.findById(requestId).await().indefinitely();
+
+        assertEquals(CollectionRequest.Status.IN_PROGRESS, reloaded.getStatus());
+        assertEquals(2, reloaded.getCompletionCode().version());
+        assertEquals("retired-key-1", reloaded.getCompletionCode().keyId());
+        assertEquals("authenticated-ciphertext", reloaded.getCompletionCode().ciphertext());
+        assertFalse(reloaded.getCompletionCode().isConsumed());
+        assertEquals(null, reloaded.getCompletionEvidence());
+    }
+
+    @Test
     void fifthInvalidAttemptBlocksAndExpiryBeginsANewAttemptCycle() {
         String requestId = saveInProgressRequest();
         repository.issueCompletionCodeIfAbsent(requestId, code("ciphertext", 1)).await().indefinitely();

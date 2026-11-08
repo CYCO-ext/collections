@@ -45,7 +45,8 @@ public class CompletionEffectsUseCase {
     @Inject
     CollectionStatusNotificationUseCase notificationUseCase;
 
-    @Scheduled(every = "30s", delayed = "10s")
+    @Scheduled(every = "${completion.effects.reconciliation-interval:30s}",
+            delayed = "${completion.effects.initial-delay:10s}")
     void scheduledReconciliation() {
         processPendingEffects(100).subscribe().with(
                 ignored -> { },

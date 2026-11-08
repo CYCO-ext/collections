@@ -26,6 +26,10 @@ public class CompletionAuthenticatedActorPortFixture implements AuthenticatedAct
                     "user-third", "WASTE_COLLECTOR", null, "collector-2", null, null));
             case "Bearer generator" -> Uni.createFrom().item(new AuthenticatedActor(
                     "user-generator", "GENERATOR", "generator-1", null, null, null));
+            case "Bearer deliveryman" -> Uni.createFrom().item(new AuthenticatedActor(
+                    "user-deliveryman", "DELIVERYMAN", null, null, "deliveryman-1", "collector-1"));
+            case "Bearer other-deliveryman" -> Uni.createFrom().item(new AuthenticatedActor(
+                    "user-other-deliveryman", "DELIVERYMAN", null, null, "deliveryman-2", "collector-1"));
             default -> Uni.createFrom().failure(new RegisterAuthenticatedActorAdapter.ActorUnauthenticatedException());
         };
     }

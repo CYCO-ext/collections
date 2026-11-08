@@ -85,6 +85,8 @@ class DeliverymanUseCaseTest {
                         "user-1", "DELIVERYMAN", null, null, "deliveryman-1", "collector-1")));
         lenient().when(collectionRequestPort.findByIds(any()))
                 .thenReturn(Uni.createFrom().item(List.of()));
+        lenient().when(collectionRequestPort.findById(any()))
+                .thenReturn(Uni.createFrom().nullItem());
     }
 
     @Test
@@ -245,12 +247,15 @@ class DeliverymanUseCaseTest {
                 "request-1", "bearer", "001234", "00000000-0000-0000-0000-000000000001"))
                 .thenReturn(Uni.createFrom().item(new CompletionUseCase.CompletionResult("request-1", "COMPLETED", "completion-1")));
 
-        DeliveryRouteAssignment result = useCase.completeAssignedStop(
+        DeliverymanUseCase.CompletedStopResult result = useCase.completeAssignedStop(
                 "deliveryman-1", "assignment-1", "request-1", "bearer", "001234",
                 "00000000-0000-0000-0000-000000000001").await().indefinitely();
 
-        assertEquals(RouteAssignmentStatus.COMPLETED, result.status());
-        assertEquals(List.of("request-1"), result.completedCollectionRequestIds());
+        assertEquals(RouteAssignmentStatus.COMPLETED, result.assignment().status());
+        assertEquals(List.of("request-1"), result.assignment().completedCollectionRequestIds());
+        assertEquals("completion-1", result.completionId());
+        assertEquals("request-1", result.requestId());
+        assertEquals(false, result.reconciliationPending());
         var order = inOrder(completionUseCase, assignmentPort);
         order.verify(completionUseCase).confirmDeliverymanWithCode(
                 "request-1", "bearer", "001234", "00000000-0000-0000-0000-000000000001");
@@ -282,7 +287,7 @@ class DeliverymanUseCaseTest {
         when(assignmentPort.findById("assignment-1"))
                 .thenReturn(Uni.createFrom().item(assignment(RouteAssignmentStatus.IN_PROGRESS, List.of())));
 
-        assertThrows(IllegalStateException.class, () -> useCase.completeAssignedStop(
+        assertThrows(CompletionCodeForbiddenException.class, () -> useCase.completeAssignedStop(
                 "deliveryman-1", "assignment-1", "other-request", "bearer", "999999",
                 "00000000-0000-0000-0000-000000000001").await().indefinitely());
 
@@ -300,12 +305,12 @@ class DeliverymanUseCaseTest {
                 "request-1", "bearer", "001234", "00000000-0000-0000-0000-000000000001"))
                 .thenReturn(Uni.createFrom().item(new CompletionUseCase.CompletionResult("request-1", "COMPLETED", "completion-1")));
 
-        DeliveryRouteAssignment result = useCase.completeAssignedStop(
+        DeliverymanUseCase.CompletedStopResult result = useCase.completeAssignedStop(
                 "deliveryman-1", "assignment-1", "request-1", "bearer", "001234",
                 "00000000-0000-0000-0000-000000000001").await().indefinitely();
 
-        assertEquals(RouteAssignmentStatus.COMPLETED, result.status());
-        assertEquals("deliveryman-1", result.deliverymanId());
+        assertEquals(RouteAssignmentStatus.COMPLETED, result.assignment().status());
+        assertEquals("deliveryman-1", result.assignment().deliverymanId());
         verify(completionUseCase).confirmDeliverymanWithCode(any(), any(), any(), any());
         verify(assignmentPort, never()).update(any());
     }

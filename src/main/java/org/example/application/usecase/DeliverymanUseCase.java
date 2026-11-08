@@ -20,6 +20,7 @@ import org.example.application.port.out.SavedRoutePort;
 import org.example.application.route.RouteModels.RoutePlan;
 import org.example.application.route.RouteModels.RouteStop;
 import org.example.application.route.SavedRouteModels.SavedRouteStatus;
+import org.example.domain.entity.CollectionRequest;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -157,7 +158,7 @@ public class DeliverymanUseCase {
                 "COMPLETION_CODE_REQUIRED", "A valid completion code is required to complete a delivery stop"));
     }
 
-    public Uni<DeliveryRouteAssignment> completeAssignedStop(
+    public Uni<CompletedStopResult> completeAssignedStop(
             String deliverymanId,
             String assignmentId,
             String collectionRequestId,
@@ -166,7 +167,12 @@ public class DeliverymanUseCase {
             String idempotencyKey
     ) {
         validateRequired(collectionRequestId, "collectionRequestId");
+        if (bearerToken == null || bearerToken.isBlank()) {
+            return Uni.createFrom().failure(new CompletionCodeUnauthenticatedException());
+        }
         return authenticatedActorPort.resolve(bearerToken)
+                .onFailure(org.example.infrastructure.identity.RegisterAuthenticatedActorAdapter.ActorUnauthenticatedException.class)
+                .transform(ignored -> new CompletionCodeUnauthenticatedException())
                 .flatMap(actor -> {
                     if (actor == null || !"DELIVERYMAN".equals(actor.role())
                             || !Objects.equals(actor.deliverymanId(), deliverymanId)) {
@@ -175,14 +181,33 @@ public class DeliverymanUseCase {
                     return loadAssignmentForDeliverymanCompletion(deliverymanId, assignmentId)
                             .flatMap(assignment -> {
                                 if (!assignment.assignedCollectionRequestIds().contains(collectionRequestId)) {
-                                    return Uni.createFrom().failure(new IllegalStateException("Collection request is not assigned to deliveryman"));
+                                    return Uni.createFrom().failure(new CompletionCodeForbiddenException());
                                 }
                                 return completionUseCase.confirmDeliverymanWithCode(
                                                 collectionRequestId, bearerToken, code, idempotencyKey)
-                                        .flatMap(ignored -> assignmentPort.findById(assignmentId)
-                                                .onItem().ifNull().continueWith(assignment));
+                                        .flatMap(completion -> Uni.combine().all().unis(
+                                                        assignmentPort.findById(assignmentId),
+                                                        collectionRequestPort.findById(collectionRequestId))
+                                                .asTuple()
+                                                .map(tuple -> {
+                                                    DeliveryRouteAssignment reconciled = tuple.getItem1() == null
+                                                            ? assignment : tuple.getItem1();
+                                                    CollectionRequest request = tuple.getItem2();
+                                                    boolean pending = request != null && request.getCompletionEvidence() != null
+                                                            && !request.getCompletionEvidence().pendingEffects().isEmpty();
+                                                    return new CompletedStopResult(
+                                                            reconciled, collectionRequestId, completion.completionId(), pending);
+                                                }));
                             });
                 });
+    }
+
+    public record CompletedStopResult(
+            DeliveryRouteAssignment assignment,
+            String requestId,
+            String completionId,
+            boolean reconciliationPending
+    ) {
     }
 
     private Uni<DeliveryRouteAssignment> loadAssignmentForDeliverymanCompletion(String deliverymanId, String assignmentId) {
@@ -192,7 +217,7 @@ public class DeliverymanUseCase {
                 .onItem().ifNull().failWith(() -> new IllegalArgumentException("Assignment not found: " + assignmentId))
                 .flatMap(assignment -> {
                     if (!Objects.equals(assignment.deliverymanId(), deliverymanId)) {
-                        return Uni.createFrom().failure(new IllegalStateException("Assignment does not belong to deliveryman"));
+                        return Uni.createFrom().failure(new CompletionCodeForbiddenException());
                     }
                     return Uni.createFrom().item(assignment);
                 });

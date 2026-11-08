@@ -3,6 +3,7 @@ package org.example.presentation.rest;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -12,8 +13,14 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.example.application.deliveryman.DeliverymanModels.AssignDeliveryRouteCommand;
 import org.example.application.deliveryman.DeliverymanModels.FailStopCommand;
+import org.example.application.deliveryman.DeliverymanModels.DeliveryRouteAssignment;
 import org.example.application.deliveryman.DeliverymanModels.SyncDeliverymanCommand;
 import org.example.application.usecase.DeliverymanUseCase;
+import org.example.application.usecase.CollectionRequestNotFoundException;
+import org.example.application.usecase.CompletionCodeConflictException;
+import org.example.application.usecase.CompletionCodeForbiddenException;
+import org.example.application.usecase.CompletionCodeUnauthenticatedException;
+import org.example.application.usecase.CompletionCodeValidationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -111,18 +118,66 @@ public class DeliverymanResource {
     public Uni<Response> completeStop(
             @PathParam("deliverymanId") String deliverymanId,
             @PathParam("assignmentId") String assignmentId,
-            @PathParam("collectionRequestId") String collectionRequestId
+            @PathParam("collectionRequestId") String collectionRequestId,
+            @HeaderParam("Authorization") String authorization,
+            @HeaderParam("Idempotency-Key") String idempotencyKey,
+            ConfirmDeliveryStopDTO dto
     ) {
         LOG.info("POST /deliverymen/{}/assignments/{}/stops/{}/complete", deliverymanId, assignmentId, collectionRequestId);
-        return deliverymanUseCase.completeAssignedStop(deliverymanId, assignmentId, collectionRequestId)
-                .onItem().transform(result -> Response.ok(result).build())
-                .onFailure(IllegalArgumentException.class).recoverWithItem(ex -> Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage()).build())
-                .onFailure(IllegalStateException.class).recoverWithItem(ex -> Response.status(Response.Status.CONFLICT).entity(ex.getMessage()).build())
+        return deliverymanUseCase.completeAssignedStop(deliverymanId, assignmentId, collectionRequestId,
+                        authorization, dto == null ? null : dto.code(), idempotencyKey)
+                .onItem().transform(result -> {
+                    if (result.reconciliationPending()) {
+                        return Response.accepted(new PendingDeliveryStopResponse(
+                                        result.requestId(), result.completionId(), true))
+                                .header("Cache-Control", "no-store")
+                                .build();
+                    }
+                    return Response.ok(new CompletedDeliveryStopResponse(
+                                    result.assignment(), result.requestId(), result.completionId()))
+                            .header("Cache-Control", "no-store")
+                            .build();
+                })
+                .onFailure(CompletionCodeUnauthenticatedException.class).recoverWithItem(ex ->
+                        completionError(Response.Status.UNAUTHORIZED, "UNAUTHENTICATED", ex.getMessage()))
+                .onFailure(CompletionCodeForbiddenException.class).recoverWithItem(ex ->
+                        completionError(Response.Status.FORBIDDEN, "FORBIDDEN", ex.getMessage()))
+                .onFailure(CompletionCodeConflictException.class).recoverWithItem(ex -> {
+                    CompletionCodeConflictException conflict = (CompletionCodeConflictException) ex;
+                    return completionError(Response.Status.CONFLICT, conflict.code(), conflict.getMessage());
+                })
+                .onFailure(CompletionCodeValidationException.class).recoverWithItem(ex -> {
+                    CompletionCodeValidationException validation = (CompletionCodeValidationException) ex;
+                    Response.ResponseBuilder response = Response.status(validation.status())
+                            .entity(new CompletionErrorResponse(new CompletionError(
+                                    validation.code(), validation.getMessage(), validation.retryAfterSeconds())));
+                    if (validation.retryAfterSeconds() != null) {
+                        response.header("Retry-After", validation.retryAfterSeconds());
+                    }
+                    return response.build();
+                })
+                .onFailure(CollectionRequestNotFoundException.class).recoverWithItem(ex ->
+                        completionError(Response.Status.NOT_FOUND, "COLLECTION_NOT_FOUND", ex.getMessage()))
+                .onFailure(IllegalArgumentException.class).recoverWithItem(ex ->
+                        completionError(Response.Status.BAD_REQUEST, "INVALID_REQUEST", ex.getMessage()))
                 .onFailure().recoverWithItem(ex -> {
-                    LOG.error("Error completing delivery stop", ex);
-                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(ex.getMessage()).build();
+                    LOG.error("Error completing delivery stop {}", collectionRequestId, ex);
+                    return completionError(Response.Status.SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE",
+                            "Completion service is temporarily unavailable");
                 });
     }
+
+    private Response completionError(Response.Status status, String code, String message) {
+        return Response.status(status)
+                .entity(new CompletionErrorResponse(new CompletionError(code, message, null)))
+                .build();
+    }
+
+    public record ConfirmDeliveryStopDTO(String code) { }
+    public record CompletedDeliveryStopResponse(DeliveryRouteAssignment assignment, String requestId, String completionId) { }
+    public record PendingDeliveryStopResponse(String requestId, String completionId, boolean reconciliationPending) { }
+    public record CompletionErrorResponse(CompletionError error) { }
+    public record CompletionError(String code, String message, Integer retryAfterSeconds) { }
 
     @POST
     @Path("/deliverymen/{deliverymanId}/assignments/{assignmentId}/stops/{collectionRequestId}/fail")

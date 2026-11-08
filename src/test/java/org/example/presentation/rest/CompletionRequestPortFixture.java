@@ -67,7 +67,10 @@ public class CompletionRequestPortFixture implements CollectionRequestPort {
                 current.keyId(), current.verifier(), current.issuedAt(), current.failedAttempts(),
                 current.blockedUntil(), evidence.validatedAt()));
         request.setCollectorConfirmed(true);
-        request.setCompletionEvidence(evidence);
+        request.setCompletionEvidence(new CompletionEvidence(
+                evidence.completionId(), evidence.actorUserId(), evidence.actorRole(), evidence.actorProfileId(),
+                evidence.validatedAt(), evidence.codeVersion(), evidence.idempotencyKey(), evidence.payloadDigest(),
+                List.of("ROUTE_PROGRESS", "ROUTE_CLOSE", "COLLECTION_EVENT", "NOTIFICATION")));
         request.setStatus(CollectionRequest.Status.COMPLETED);
         return Uni.createFrom().item(true);
     }

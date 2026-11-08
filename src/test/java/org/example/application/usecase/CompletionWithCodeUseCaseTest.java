@@ -53,9 +53,6 @@ class CompletionWithCodeUseCaseTest {
         useCase.collectionRequestPort = collectionRequestPort;
         useCase.authenticatedActorPort = authenticatedActorPort;
         useCase.cryptoPort = cryptoPort;
-        useCase.eventPort = eventPort;
-        useCase.closeSavedRoutesUseCase = closeSavedRoutesUseCase;
-        useCase.notificationUseCase = notificationUseCase;
         useCase.completionEffectsUseCase = completionEffectsUseCase;
         request = new CollectionRequest("generator-1", "address-1", List.of("paper"), 10.0);
         request.setId(REQUEST_ID);

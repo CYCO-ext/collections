@@ -2,7 +2,6 @@ package org.example.application.usecase;
 
 import io.smallrye.mutiny.Uni;
 import org.example.application.port.out.CollectionRequestPort;
-import org.example.application.port.out.EventPort;
 import org.example.domain.entity.CollectionRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -10,12 +9,13 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.ArgumentMatchers.any;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class CompletionUseCaseTest {
@@ -26,84 +26,51 @@ class CompletionUseCaseTest {
     @Mock
     private CollectionRequestPort collectionRequestPort;
 
-    @Mock
-    private EventPort eventPort;
-
-    @Mock
-    private CloseSavedRoutesUseCase closeSavedRoutesUseCase;
-
-    @Mock
-    private CollectionStatusNotificationUseCase notificationUseCase;
-
     @Test
-    void testConfirmGeneratorCompletion() {
-        String requestId = "req-001";
-        CollectionRequest request = request(requestId);
+    void legacyGeneratorConfirmationFailsClosedWithoutChangingRequestOrPublishingEffects() {
+        CollectionRequest request = activeRequestWithLegacyBooleansSet();
 
-        when(collectionRequestPort.findById(requestId))
-                .thenReturn(Uni.createFrom().item(request));
-        when(collectionRequestPort.update(any(CollectionRequest.class)))
-                .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
+        CompletionCodeConflictException error = assertThrows(CompletionCodeConflictException.class,
+                () -> useCase.confirmGeneratorCompletion(request.getId()).await().indefinitely());
 
-        Uni<Void> result = useCase.confirmGeneratorCompletion(requestId);
-
-        assertNotNull(result);
-        result.await().indefinitely();
-
-        verify(collectionRequestPort).findById(requestId);
-        verify(collectionRequestPort).update(any(CollectionRequest.class));
-        verify(eventPort, never()).publishCollectionEvent(any());
-        verify(closeSavedRoutesUseCase, never()).closeRoutesContaining(any());
+        assertEquals("COMPLETION_CODE_REQUIRED", error.code());
+        assertUnchanged(request);
+        verifyNoCompletionMutationOrLookup();
     }
 
     @Test
-    void testCollectorConfirmationWithoutCodeDoesNotCompleteRequest() {
-        String requestId = "req-001";
-        CollectionRequest request = request(requestId);
-        request.setGeneratorConfirmed(true);
+    void legacyCollectorConfirmationFailsClosedWithoutChangingRequestOrPublishingEffects() {
+        CollectionRequest request = activeRequestWithLegacyBooleansSet();
 
-        when(collectionRequestPort.findById(requestId))
-                .thenReturn(Uni.createFrom().item(request));
-        when(collectionRequestPort.update(any(CollectionRequest.class)))
-                .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
-        Uni<Void> result = useCase.confirmCollectorCompletion(requestId);
+        CompletionCodeConflictException error = assertThrows(CompletionCodeConflictException.class,
+                () -> useCase.confirmCollectorCompletion(request.getId()).await().indefinitely());
 
-        assertNotNull(result);
-        result.await().indefinitely();
-
-        verify(collectionRequestPort).findById(requestId);
-        verify(collectionRequestPort, times(1)).update(any(CollectionRequest.class));
-        verify(eventPort, never()).publishCollectionEvent(any());
-        verify(closeSavedRoutesUseCase, never()).closeRoutesContaining(any());
+        assertEquals("COMPLETION_CODE_REQUIRED", error.code());
+        assertUnchanged(request);
+        verifyNoCompletionMutationOrLookup();
     }
 
-    @Test
-    void testLegacyConfirmationsDoNotCompleteRequestWithoutCodeEvidence() {
-        String requestId = "req-001";
-        CollectionRequest request = request(requestId);
-        request.setGeneratorConfirmed(true);
-
-        when(collectionRequestPort.findById(requestId))
-                .thenReturn(Uni.createFrom().item(request));
-        when(collectionRequestPort.update(any(CollectionRequest.class)))
-                .thenReturn(Uni.createFrom().nullItem().replaceWithVoid());
-        Uni<Void> result = useCase.confirmCollectorCompletion(requestId);
-
-        assertNotNull(result);
-        result.await().indefinitely();
-
-        verify(collectionRequestPort).findById(requestId);
-        verify(collectionRequestPort, times(1)).update(any(CollectionRequest.class));
-        verify(eventPort, never()).publishCollectionEvent(any());
-        verify(closeSavedRoutesUseCase, never()).closeRoutesContaining(any());
-    }
-
-    private CollectionRequest request(String requestId) {
-        CollectionRequest request = new CollectionRequest("gen-001", "addr-001",
-                java.util.Arrays.asList("mat-001"), 100.0);
-        request.setId(requestId);
+    private CollectionRequest activeRequestWithLegacyBooleansSet() {
+        CollectionRequest request = new CollectionRequest("gen-001", "addr-001", List.of("mat-001"), 100.0);
+        request.setId("req-001");
         request.setStatus(CollectionRequest.Status.IN_PROGRESS);
         request.setSelectedCollectorId("coll-001");
+        request.setGeneratorConfirmed(true);
+        request.setCollectorConfirmed(true);
         return request;
+    }
+
+    private void assertUnchanged(CollectionRequest request) {
+        assertEquals(CollectionRequest.Status.IN_PROGRESS, request.getStatus());
+        assertEquals(Boolean.TRUE, request.getGeneratorConfirmed());
+        assertEquals(Boolean.TRUE, request.getCollectorConfirmed());
+        assertNull(request.getCompletionEvidence());
+    }
+
+    private void verifyNoCompletionMutationOrLookup() {
+        verify(collectionRequestPort, never()).findById("req-001");
+        verify(collectionRequestPort, never()).update(org.mockito.ArgumentMatchers.any());
+        verify(collectionRequestPort, never()).completeWithCode(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.any());
     }
 }

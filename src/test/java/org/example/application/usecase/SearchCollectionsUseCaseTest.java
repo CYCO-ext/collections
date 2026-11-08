@@ -1,11 +1,15 @@
 package org.example.application.usecase;
 
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.smallrye.mutiny.Uni;
 import org.example.application.port.out.AddressPort;
 import org.example.application.port.out.CollectionRequestPort;
 import org.example.application.usecase.SearchCollectionsUseCase.CollectionSearchQuery;
 import org.example.domain.entity.Address;
 import org.example.domain.entity.CollectionRequest;
+import org.example.domain.entity.CompletionCodeState;
+import org.example.domain.entity.CompletionEvidence;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,6 +20,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -23,6 +28,8 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class SearchCollectionsUseCaseTest {
+
+    private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
     private SearchCollectionsUseCase useCase;
 
@@ -132,6 +139,26 @@ class SearchCollectionsUseCaseTest {
 
         assertEquals("Collection address not found: missing-address", exception.getMessage());
         verify(addressPort).findById("missing-address");
+    }
+
+    @Test
+    void searchProjectionNeverSerializesCompletionSecretsOrEvidence() throws Exception {
+        CollectionRequest request = request("request-secret-free", "address-1", CollectionRequest.Status.IN_PROGRESS,
+                LocalDateTime.now());
+        request.setCompletionCode(new CompletionCodeState(1, "ROUTE_CIPHER_SECRET", "ROUTE_NONCE_SECRET",
+                "key-secret", "ROUTE_VERIFIER_SECRET", LocalDateTime.now(), 0, null, null));
+        request.setCompletionEvidence(new CompletionEvidence("COMPLETION_ID_SECRET", "user-1", "WASTE_COLLECTOR",
+                "collector-1", LocalDateTime.now(), 1, "IDEMPOTENCY_SECRET", "PAYLOAD_DIGEST_SECRET"));
+        when(addressPort.findById("address-1")).thenReturn(Uni.createFrom().item(address("address-1")));
+
+        SearchCollectionsUseCase.CollectionSearchResult result = useCase.toResult(request).await().indefinitely();
+        String json = objectMapper.writeValueAsString(result);
+
+        for (String secret : List.of("ROUTE_CIPHER_SECRET", "ROUTE_NONCE_SECRET", "key-secret",
+                "ROUTE_VERIFIER_SECRET", "COMPLETION_ID_SECRET", "IDEMPOTENCY_SECRET", "PAYLOAD_DIGEST_SECRET",
+                "completionCode", "completionEvidence")) {
+            assertFalse(json.contains(secret), "search response leaked " + secret);
+        }
     }
 
     private CollectionRequest request(String id, String addressId, CollectionRequest.Status status, LocalDateTime createdAt) {

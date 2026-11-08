@@ -16,6 +16,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -36,6 +40,7 @@ class CompletionWithCodeUseCaseTest {
     private static final String IDEMPOTENCY_KEY = "6d2b9c98-7339-4ed5-a9e2-3f5433f89ab1";
 
     private CompletionUseCase useCase;
+    private MutableClock clock;
     private CollectionRequest request;
     private AuthenticatedActorPort.AuthenticatedActor collector;
 
@@ -50,6 +55,8 @@ class CompletionWithCodeUseCaseTest {
     @BeforeEach
     void setUp() {
         useCase = new CompletionUseCase();
+        clock = new MutableClock(Instant.now(), ZoneId.systemDefault());
+        useCase.clock = clock;
         useCase.collectionRequestPort = collectionRequestPort;
         useCase.authenticatedActorPort = authenticatedActorPort;
         useCase.cryptoPort = cryptoPort;
@@ -86,6 +93,9 @@ class CompletionWithCodeUseCaseTest {
         assertEquals("WASTE_COLLECTOR", evidence.getValue().actorRole());
         assertEquals("collector-1", evidence.getValue().actorProfileId());
         assertEquals("authenticated-payload-digest", evidence.getValue().payloadDigest());
+        assertEquals(REQUEST_ID, result.requestId());
+        assertEquals("COMPLETED", result.status());
+        assertNotNull(evidence.getValue().validatedAt());
         verify(collectionRequestPort, never()).incrementCompletionCodeAttempts(any(), any(Integer.class), any(), any(), any(Integer.class));
         verify(eventPort, never()).publishCollectionEvent(any());
         verify(closeSavedRoutesUseCase, never()).closeRoutesContaining(any());
@@ -135,6 +145,8 @@ class CompletionWithCodeUseCaseTest {
 
     @Test
     void invalidValidFormatCodeIncrementsAttemptAndReturns422() {
+        request.setGeneratorConfirmed(true);
+        request.setCollectorConfirmed(true);
         when(cryptoPort.matchesVerifier(REQUEST_ID, 1, "111111", "expected-verifier")).thenReturn(false);
         when(collectionRequestPort.incrementCompletionCodeAttempts(eq(REQUEST_ID), eq(1), any(), any(), eq(5)))
                 .thenReturn(Uni.createFrom().item(true));
@@ -144,6 +156,10 @@ class CompletionWithCodeUseCaseTest {
 
         assertEquals(422, exception.status());
         assertEquals("CODE_INVALID", exception.code());
+        assertEquals(CollectionRequest.Status.ON_THE_WAY, request.getStatus());
+        assertEquals(Boolean.TRUE, request.getGeneratorConfirmed());
+        assertEquals(Boolean.TRUE, request.getCollectorConfirmed());
+        assertEquals(null, request.getCompletionEvidence());
         verify(collectionRequestPort, never()).completeWithCode(any(), any(Integer.class), any());
         verify(eventPort, never()).publishCollectionEvent(any());
     }
@@ -164,6 +180,59 @@ class CompletionWithCodeUseCaseTest {
         assertEquals(429, exception.status());
         assertEquals("TOO_MANY_ATTEMPTS", exception.code());
         assertNotNull(exception.retryAfterSeconds());
+    }
+
+    @Test
+    void failedAttemptsRestartAfterExpiryAndAllowFiveMoreTries() {
+        when(cryptoPort.matchesVerifier(REQUEST_ID, 1, "111111", "expected-verifier")).thenReturn(false);
+        when(collectionRequestPort.incrementCompletionCodeAttempts(eq(REQUEST_ID), eq(1), any(), any(), eq(5)))
+                .thenAnswer(invocation -> {
+                    LocalDateTime now = invocation.getArgument(2);
+                    LocalDateTime blockedUntil = invocation.getArgument(3);
+                    CompletionCodeState current = request.getCompletionCode();
+                    int priorAttempts = current.failedAttempts();
+                    if (priorAttempts >= 5 && current.blockedUntil() != null && !current.blockedUntil().isAfter(now)) {
+                        priorAttempts = 0;
+                    }
+                    int attempts = priorAttempts + 1;
+                    request.setCompletionCode(new CompletionCodeState(current.version(), current.ciphertext(), current.nonce(),
+                            current.keyId(), current.verifier(), current.issuedAt(), attempts,
+                            attempts >= 5 ? blockedUntil : null, current.consumedAt()));
+                    return Uni.createFrom().item(true);
+                });
+
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            CompletionCodeValidationException failure = assertThrows(CompletionCodeValidationException.class,
+                    () -> useCase.confirmWithCode(REQUEST_ID, BEARER, "111111", IDEMPOTENCY_KEY).await().indefinitely());
+            assertEquals(attempt == 5 ? 429 : 422, failure.status());
+            if (attempt == 5) {
+                assertEquals(900, failure.retryAfterSeconds());
+            }
+        }
+        assertEquals(5, request.getCompletionCode().failedAttempts());
+        assertNotNull(request.getCompletionCode().blockedUntil());
+
+        clock.advance(Duration.ofMinutes(16));
+        CompletionCodeValidationException afterExpiry = assertThrows(CompletionCodeValidationException.class,
+                () -> useCase.confirmWithCode(REQUEST_ID, BEARER, "111111", IDEMPOTENCY_KEY).await().indefinitely());
+
+        assertEquals(422, afterExpiry.status());
+        assertEquals(1, request.getCompletionCode().failedAttempts());
+        assertEquals(null, request.getCompletionCode().blockedUntil());
+    }
+
+    @Test
+    void validCodeTrimsExternalWhitespaceBeforeVerifierComparison() {
+        when(cryptoPort.matchesVerifier(REQUEST_ID, 1, "001234", "expected-verifier")).thenReturn(true);
+        when(cryptoPort.createVerifier(REQUEST_ID, 1, "001234")).thenReturn("authenticated-payload-digest");
+        when(collectionRequestPort.completeWithCode(eq(REQUEST_ID), eq(1), any(CompletionEvidence.class)))
+                .thenReturn(Uni.createFrom().item(true));
+
+        CompletionUseCase.CompletionResult result = useCase.confirmCollectorWithCode(
+                REQUEST_ID, BEARER, "  001234 \n", IDEMPOTENCY_KEY).await().indefinitely();
+
+        assertEquals("COMPLETED", result.status());
+        verify(cryptoPort).matchesVerifier(REQUEST_ID, 1, "001234", "expected-verifier");
     }
 
     @Test
@@ -241,5 +310,20 @@ class CompletionWithCodeUseCaseTest {
     private CompletionCodeState codeState(int attempts, LocalDateTime blockedUntil, LocalDateTime consumedAt) {
         return new CompletionCodeState(1, "cipher", "nonce", "key-1", "expected-verifier",
                 LocalDateTime.now().minusMinutes(1), attempts, blockedUntil, consumedAt);
+    }
+
+    private static final class MutableClock extends Clock {
+        private Instant instant;
+        private final ZoneId zone;
+
+        private MutableClock(Instant instant, ZoneId zone) {
+            this.instant = instant;
+            this.zone = zone;
+        }
+
+        @Override public ZoneId getZone() { return zone; }
+        @Override public Clock withZone(ZoneId zone) { return new MutableClock(instant, zone); }
+        @Override public Instant instant() { return instant; }
+        private void advance(Duration duration) { instant = instant.plus(duration); }
     }
 }

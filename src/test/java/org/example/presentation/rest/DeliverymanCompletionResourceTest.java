@@ -60,6 +60,9 @@ class DeliverymanCompletionResourceTest {
 
         DeliveryRouteAssignment completed = assignmentRepository.findById(assignment.id()).await().indefinitely();
         assertEquals("deliveryman-1", completed.deliverymanId());
+        assertEquals(assignment.savedRouteId(), completed.savedRouteId());
+        assertEquals(assignment.vehicleIndex(), completed.vehicleIndex());
+        assertEquals(assignment.collectorId(), completed.collectorId());
         assertTrue(completed.completedCollectionRequestIds().contains(requestId));
 
         DeliveryRouteAssignment terminal = completed.finish(RouteAssignmentStatus.COMPLETED, LocalDateTime.now());
@@ -109,7 +112,13 @@ class DeliverymanCompletionResourceTest {
     @Test
     void malformedAndWrongCodesDoNotRegisterSuccessfulStop() {
         String requestId = "delivery-invalid-" + UUID.randomUUID();
-        DeliveryRouteAssignment assignment = seedAssignment(requestId, List.of(requestId));
+        String priorCompletedRequestId = "delivery-already-completed-" + UUID.randomUUID();
+        DeliveryRouteAssignment assignment = seedAssignment(requestId, List.of(priorCompletedRequestId, requestId));
+        assignment = assignment.completeStop(priorCompletedRequestId, LocalDateTime.now());
+        assignmentRepository.update(assignment).await().indefinitely();
+        CollectionRequest seededRequest = requestPort.findById(requestId).await().indefinitely();
+        seededRequest.setGeneratorConfirmed(true);
+        seededRequest.setCollectorConfirmed(true);
         String key = UUID.randomUUID().toString();
 
         given().contentType("application/json")
@@ -125,13 +134,18 @@ class DeliverymanCompletionResourceTest {
                     .header("Idempotency-Key", key)
                     .body(new DeliverymanResource.ConfirmDeliveryStopDTO("654321"))
                     .when().post(stopUrl(assignment, requestId))
-                    .then().statusCode(attempt == 5 ? 429 : 422);
+                    .then().statusCode(attempt == 5 ? 429 : 422)
+                    .header("Retry-After", attempt == 5 ? org.hamcrest.Matchers.notNullValue() : org.hamcrest.Matchers.nullValue());
         }
 
         CollectionRequest request = requestPort.findById(requestId).await().indefinitely();
         assertEquals(CollectionRequest.Status.IN_PROGRESS, request.getStatus());
+        assertEquals(Boolean.TRUE, request.getGeneratorConfirmed());
+        assertEquals(Boolean.TRUE, request.getCollectorConfirmed());
         assertEquals(5, request.getCompletionCode().failedAttempts());
         assertEquals(List.of(), assignmentRepository.findById(assignment.id()).await().indefinitely()
+                .completedCollectionRequestIds().stream().filter(requestId::equals).toList());
+        assertEquals(List.of(priorCompletedRequestId), assignmentRepository.findById(assignment.id()).await().indefinitely()
                 .completedCollectionRequestIds());
         assertEquals(List.of(), routeLogRepository.findBySavedRouteIdAndVehicleIndex(
                 assignment.savedRouteId(), assignment.vehicleIndex()).await().indefinitely());
@@ -159,6 +173,10 @@ class DeliverymanCompletionResourceTest {
         assertTrue(!request.getCompletionEvidence().pendingEffects().isEmpty());
         assertTrue(assignmentRepository.findById(assignment.id()).await().indefinitely()
                 .completedCollectionRequestIds().contains(requestId));
+        DeliveryRouteAssignment reconciledAssignment = assignmentRepository.findById(assignment.id()).await().indefinitely();
+        assertEquals(assignment.savedRouteId(), reconciledAssignment.savedRouteId());
+        assertEquals(assignment.vehicleIndex(), reconciledAssignment.vehicleIndex());
+        assertEquals(assignment.deliverymanId(), reconciledAssignment.deliverymanId());
     }
 
     private DeliveryRouteAssignment seedAssignment(String requestId, List<String> assignedStops) {

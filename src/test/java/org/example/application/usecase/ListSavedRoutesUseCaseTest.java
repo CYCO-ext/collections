@@ -1,5 +1,7 @@
 package org.example.application.usecase;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.smallrye.mutiny.Uni;
 import org.example.application.port.out.SavedRoutePort;
 import org.example.application.route.RouteModels.RouteOptimizationResult;
@@ -17,11 +19,13 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ListSavedRoutesUseCaseTest {
+    private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     private ListSavedRoutesUseCase useCase;
 
     @Mock
@@ -54,5 +58,23 @@ class ListSavedRoutesUseCaseTest {
         assertEquals(1, result.size());
         assertEquals("saved-1", result.getFirst().id());
         verify(savedRoutePort).findAllOrderByCreatedAtDesc();
+    }
+
+    @Test
+    void savedRouteProjectionDoesNotExposeCompletionCodeFields() throws Exception {
+        SavedRouteSuggestion route = new SavedRouteSuggestion(
+                "saved-secret-free", "collector-1", SavedRouteStatus.OPEN, "fingerprint",
+                List.of("request-secret-free"), List.of(),
+                new RouteOptimizationResult(SolverStatus.FEASIBLE, new SolverMetadata("TEST", 1, 1, 0), List.of(), List.of()),
+                LocalDateTime.now(), LocalDateTime.now(), null);
+        when(savedRoutePort.findAllOrderByCreatedAtDesc()).thenReturn(Uni.createFrom().item(List.of(route)));
+
+        String json = objectMapper.writeValueAsString(useCase.list().await().indefinitely());
+
+        assertFalse(json.contains("completionCode"));
+        assertFalse(json.contains("completionEvidence"));
+        assertFalse(json.contains("ciphertext"));
+        assertFalse(json.contains("verifier"));
+        assertFalse(json.contains("001234"));
     }
 }

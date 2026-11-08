@@ -12,6 +12,7 @@ import org.example.domain.entity.CompletionEvidence;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Objects;
@@ -21,6 +22,8 @@ import java.util.UUID;
 public class CompletionUseCase {
 
     private static final Logger LOG = LoggerFactory.getLogger(CompletionUseCase.class);
+
+    Clock clock = Clock.systemDefaultZone();
 
     @Inject
     CollectionRequestPort collectionRequestPort;
@@ -103,7 +106,7 @@ public class CompletionUseCase {
                                 return Uni.createFrom().failure(new CompletionCodeConflictException(
                                         "CODE_NOT_ISSUED", "Completion code has not been issued"));
                             }
-                            LocalDateTime now = LocalDateTime.now();
+                            LocalDateTime now = LocalDateTime.now(clock);
                             if (codeState.isConsumed()) {
                                 return Uni.createFrom().failure(new CompletionCodeConflictException(
                                         "CODE_CONSUMED", "Completion code has already been consumed"));

@@ -1,9 +1,11 @@
 package org.example.presentation.rest;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.example.domain.entity.CollectionRequest;
 import org.example.domain.entity.CompletionCodeState;
+import org.example.domain.entity.CompletionEvidence;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -12,12 +14,17 @@ import java.util.List;
 
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.hamcrest.Matchers.equalTo;
 
 @QuarkusTest
 class CompletionResourceTest {
     @Inject
     CompletionRequestPortFixture requestPort;
+
+    @Inject
+    ObjectMapper objectMapper;
 
     @BeforeEach
     void clearRequests() {
@@ -39,8 +46,9 @@ class CompletionResourceTest {
     }
 
     @Test
-    void responsibleCollectorConfirmsWithZeroPaddedCodeAndIdempotentRetry() {
-        requestPort.seed(activeRequest());
+    void responsibleCollectorConfirmsWithZeroPaddedCodeAndIdempotentRetry() throws Exception {
+        CollectionRequest request = activeRequest();
+        requestPort.seed(request);
         String key = "0fb0c41d-67c6-4727-a944-62b78b7f74b9";
 
         String completionId = given()
@@ -68,6 +76,19 @@ class CompletionResourceTest {
                 .when().post("/api/requests/req-001/confirm-collector")
                 .then().statusCode(409)
                 .body("error.code", equalTo("IDEMPOTENCY_CONFLICT"));
+
+        assertEquals(CollectionRequest.Status.COMPLETED, request.getStatus());
+        CompletionEvidence audit = request.getCompletionEvidence();
+        assertNotNull(audit);
+        assertEquals("req-001", request.getId());
+        assertEquals("user-collector", audit.actorUserId());
+        assertEquals("WASTE_COLLECTOR", audit.actorRole());
+        assertEquals("collector-1", audit.actorProfileId());
+        assertNotNull(audit.validatedAt());
+        String persistedJson = objectMapper.writeValueAsString(request);
+        assertFalse(persistedJson.contains("001234"));
+        assertFalse(persistedJson.contains("cipher"));
+        assertFalse(persistedJson.contains("test-verifier"));
     }
 
     @Test
@@ -112,6 +133,8 @@ class CompletionResourceTest {
     @Test
     void validButWrongCodeReturns422AndFifthAttemptReturns429() {
         CollectionRequest request = activeRequest();
+        request.setGeneratorConfirmed(true);
+        request.setCollectorConfirmed(true);
         requestPort.seed(request);
         String key = "3fb0c41d-67c6-4727-a944-62b78b7f74b9";
 
@@ -121,10 +144,15 @@ class CompletionResourceTest {
                     .header("Idempotency-Key", key)
                     .body(new CompletionResource.ConfirmCollectorCompletionDTO("111111"))
                     .when().post("/api/requests/req-001/confirm-collector")
-                    .then().statusCode(attempt < 5 ? 422 : 429);
+                    .then().statusCode(attempt < 5 ? 422 : 429)
+                    .header("Retry-After", attempt < 5 ? org.hamcrest.Matchers.nullValue() : org.hamcrest.Matchers.notNullValue());
         }
         assertEquals(CollectionRequest.Status.IN_PROGRESS, request.getStatus());
         assertEquals(5, request.getCompletionCode().failedAttempts());
+        assertEquals("collector-1", request.getSelectedCollectorId());
+        assertEquals(Boolean.TRUE, request.getGeneratorConfirmed());
+        assertEquals(Boolean.TRUE, request.getCollectorConfirmed());
+        assertEquals(null, request.getCompletionEvidence());
     }
 
     private CollectionRequest activeRequest() {

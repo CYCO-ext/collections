@@ -5,6 +5,8 @@ import org.example.application.notification.NotificationModels.PushNotificationM
 import org.example.application.port.out.GeneratorNotificationTokenPort;
 import org.example.application.port.out.PushNotificationPort;
 import org.example.domain.entity.CollectionRequest;
+import org.example.domain.entity.CompletionCodeState;
+import org.example.domain.entity.CompletionEvidence;
 import org.example.domain.entity.GeneratorNotificationToken;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -80,6 +83,28 @@ class CollectionStatusNotificationUseCaseTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("push unavailable")));
         org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
                 () -> useCase.notifyGeneratorWithCompletionId(request, "completion-1").await().indefinitely());
+    }
+
+    @Test
+    void completionNotificationPayloadNeverContainsCodeOrCryptographicMaterial() {
+        CollectionRequest request = request();
+        request.setCompletionCode(new CompletionCodeState(1, "NOTIFICATION_CIPHER_SECRET", "NOTIFICATION_NONCE_SECRET",
+                "key-secret", "NOTIFICATION_VERIFIER_SECRET", java.time.LocalDateTime.now(), 0, null,
+                java.time.LocalDateTime.now()));
+        request.setCompletionEvidence(new CompletionEvidence("completion-1", "user-1", "WASTE_COLLECTOR",
+                "collector-1", java.time.LocalDateTime.now(), 1, "IDEMPOTENCY_SECRET", "PAYLOAD_DIGEST_SECRET"));
+        when(tokenPort.findEnabledByGeneratorId("generator-1")).thenReturn(Uni.createFrom().item(List.of(token("token-1"))));
+        when(pushNotificationPort.send(org.mockito.ArgumentMatchers.any())).thenReturn(Uni.createFrom().voidItem());
+
+        useCase.notifyGeneratorWithCompletionId(request, "completion-1").await().indefinitely();
+
+        ArgumentCaptor<PushNotificationMessage> captor = ArgumentCaptor.forClass(PushNotificationMessage.class);
+        verify(pushNotificationPort).send(captor.capture());
+        String payload = captor.getValue().data().toString();
+        for (String secret : List.of("001234", "NOTIFICATION_CIPHER_SECRET", "NOTIFICATION_NONCE_SECRET",
+                "NOTIFICATION_VERIFIER_SECRET", "IDEMPOTENCY_SECRET", "PAYLOAD_DIGEST_SECRET")) {
+            assertFalse(payload.contains(secret), "notification payload leaked " + secret);
+        }
     }
 
     private CollectionRequest request() {

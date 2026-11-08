@@ -14,9 +14,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -72,6 +78,57 @@ class CompletionCodeUseCaseTest {
         assertEquals("001234", reread.code());
         verify(cryptoPort).generateCode();
         verify(collectionRequestPort).issueCompletionCodeIfAbsent(eq(REQUEST_ID), any(CompletionCodeState.class));
+    }
+
+    @Test
+    void preFeatureActiveCollectionReceivesCodeOnDemand() {
+        CollectionRequest legacyRequest = activeRequest();
+        legacyRequest.setCreatedAt(LocalDateTime.of(2026, 11, 6, 23, 59));
+        when(collectionRequestPort.findById(REQUEST_ID)).thenReturn(Uni.createFrom().item(legacyRequest));
+        when(cryptoPort.generateCode()).thenReturn("001234");
+        when(cryptoPort.encrypt(REQUEST_ID, 1, "001234"))
+                .thenReturn(new CompletionCodeCryptoPort.EncryptedCode(1, "cipher", "nonce", "key-1"));
+        when(cryptoPort.createVerifier(REQUEST_ID, 1, "001234")).thenReturn("verifier");
+        when(collectionRequestPort.issueCompletionCodeIfAbsent(eq(REQUEST_ID), any(CompletionCodeState.class)))
+                .thenReturn(Uni.createFrom().item(true));
+
+        CompletionCodeUseCase.IssuedCompletionCode issued = useCase.issueOrRead(REQUEST_ID, "Bearer valid")
+                .await().indefinitely();
+
+        assertEquals(LocalDateTime.of(2026, 11, 6, 23, 59), legacyRequest.getCreatedAt());
+        assertEquals("001234", issued.code());
+        verify(collectionRequestPort).issueCompletionCodeIfAbsent(eq(REQUEST_ID), any(CompletionCodeState.class));
+    }
+
+    @Test
+    void issuedCodeAndCryptographicMaterialNeverAppearInApplicationLogs() {
+        CollectionRequest request = activeRequest();
+        when(collectionRequestPort.findById(REQUEST_ID)).thenReturn(Uni.createFrom().item(request));
+        when(cryptoPort.generateCode()).thenReturn("001234");
+        when(cryptoPort.encrypt(REQUEST_ID, 1, "001234"))
+                .thenReturn(new CompletionCodeCryptoPort.EncryptedCode(1, "LOG_CIPHER_SECRET", "LOG_NONCE_SECRET", "key-1"));
+        when(cryptoPort.createVerifier(REQUEST_ID, 1, "001234")).thenReturn("LOG_VERIFIER_SECRET");
+        when(collectionRequestPort.issueCompletionCodeIfAbsent(eq(REQUEST_ID), any(CompletionCodeState.class)))
+                .thenReturn(Uni.createFrom().item(true));
+
+        List<String> messages = new ArrayList<>();
+        Logger logger = Logger.getLogger(CompletionCodeUseCase.class.getName());
+        Handler handler = new Handler() {
+            @Override public void publish(LogRecord record) { messages.add(record.getMessage()); }
+            @Override public void flush() { }
+            @Override public void close() { }
+        };
+        logger.addHandler(handler);
+        try {
+            useCase.issueOrRead(REQUEST_ID, "Bearer valid").await().indefinitely();
+        } finally {
+            logger.removeHandler(handler);
+        }
+
+        assertTrue(messages.stream().anyMatch(message -> message.contains(REQUEST_ID)), "expected to capture the issue log");
+        for (String secret : List.of("001234", "LOG_CIPHER_SECRET", "LOG_NONCE_SECRET", "LOG_VERIFIER_SECRET")) {
+            assertFalse(messages.toString().contains(secret), "application logs leaked " + secret);
+        }
     }
 
     @Test

@@ -64,6 +64,24 @@ class CollectionStatusNotificationUseCaseTest {
         verify(pushNotificationPort, never()).send(org.mockito.ArgumentMatchers.any());
     }
 
+    @Test
+    void completionNotificationCarriesStableIdAndPropagatesFailureForRetry() {
+        CollectionRequest request = request();
+        when(tokenPort.findEnabledByGeneratorId("generator-1")).thenReturn(Uni.createFrom().item(List.of(token("token-1"))));
+        when(pushNotificationPort.send(org.mockito.ArgumentMatchers.any())).thenReturn(Uni.createFrom().voidItem());
+
+        useCase.notifyGeneratorWithCompletionId(request, "completion-1").await().indefinitely();
+
+        ArgumentCaptor<PushNotificationMessage> captor = ArgumentCaptor.forClass(PushNotificationMessage.class);
+        verify(pushNotificationPort).send(captor.capture());
+        assertEquals("completion-1", captor.getValue().data().get("completionId"));
+
+        when(pushNotificationPort.send(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Uni.createFrom().failure(new IllegalStateException("push unavailable")));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> useCase.notifyGeneratorWithCompletionId(request, "completion-1").await().indefinitely());
+    }
+
     private CollectionRequest request() {
         CollectionRequest request = new CollectionRequest("generator-1", "address-1", List.of("paper"), 10.0);
         request.setId("request-1");

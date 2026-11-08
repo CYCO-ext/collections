@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 
 @Singleton
@@ -26,6 +27,19 @@ public class CollectionStatusNotificationUseCase {
     PushNotificationPort pushNotificationPort;
 
     public Uni<Void> notifyGenerator(CollectionRequest request, String eventType) {
+        return notifyGenerator(request, eventType, null, false);
+    }
+
+    public Uni<Void> notifyGeneratorWithCompletionId(CollectionRequest request, String completionId) {
+        return notifyGenerator(request, "COLLECTION_COMPLETED", completionId, true);
+    }
+
+    private Uni<Void> notifyGenerator(
+            CollectionRequest request,
+            String eventType,
+            String completionId,
+            boolean propagateFailure
+    ) {
         if (request == null || request.getGeneratorId() == null || request.getGeneratorId().isBlank()) {
             return Uni.createFrom().voidItem();
         }
@@ -33,15 +47,22 @@ public class CollectionStatusNotificationUseCase {
         LOG.info("Resolving generator notification tokens requestId={} generatorId={} eventType={}",
                 request.getId(), request.getGeneratorId(), eventType);
 
-        return tokenPort.findEnabledByGeneratorId(request.getGeneratorId())
-                .flatMap(tokens -> sendToTokens(request, eventType, tokens))
+        Uni<Void> notification = tokenPort.findEnabledByGeneratorId(request.getGeneratorId())
+                .flatMap(tokens -> sendToTokens(request, eventType, completionId, tokens));
+        if (propagateFailure) return notification;
+        return notification
                 .onFailure().invoke(ex -> LOG.warn("Failed to publish generator notification requestId={} eventType={}",
                         request.getId(), eventType, ex))
                 .onFailure().recoverWithNull()
                 .replaceWithVoid();
     }
 
-    private Uni<Void> sendToTokens(CollectionRequest request, String eventType, List<GeneratorNotificationToken> tokens) {
+    private Uni<Void> sendToTokens(
+            CollectionRequest request,
+            String eventType,
+            String completionId,
+            List<GeneratorNotificationToken> tokens
+    ) {
         List<String> values = tokens == null ? List.of() : tokens.stream()
                                                            .filter(GeneratorNotificationToken::isEnabled)
                                                            .map(GeneratorNotificationToken::getToken)
@@ -58,18 +79,20 @@ public class CollectionStatusNotificationUseCase {
         LOG.info("Sending generator notification requestId={} generatorId={} eventType={} tokenCount={}",
                 request.getId(), request.getGeneratorId(), eventType, values.size());
 
+        Map<String, String> data = new HashMap<>(Map.of(
+                "eventType", nullToEmpty(eventType),
+                "requestId", nullToEmpty(request.getId()),
+                "generatorId", nullToEmpty(request.getGeneratorId()),
+                "collectorId", nullToEmpty(request.getSelectedCollectorId()),
+                "status", request.getStatus() == null ? "" : request.getStatus().toString()
+        ));
+        if (completionId != null) data.put("completionId", completionId);
         PushNotificationMessage message = new PushNotificationMessage(
                 request.getGeneratorId(),
                 values,
                 titleFor(eventType),
                 bodyFor(eventType),
-                Map.of(
-                        "eventType", nullToEmpty(eventType),
-                        "requestId", nullToEmpty(request.getId()),
-                        "generatorId", nullToEmpty(request.getGeneratorId()),
-                        "collectorId", nullToEmpty(request.getSelectedCollectorId()),
-                        "status", request.getStatus() == null ? "" : request.getStatus().toString()
-                )
+                data
         );
         return pushNotificationPort.send(message);
     }

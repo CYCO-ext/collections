@@ -131,6 +131,27 @@ public class CollectionRequestRepository {
                 .map(result -> result.getModifiedCount() == 1);
     }
 
+    public Uni<List<CollectionRequest>> findPendingCompletionEffects(int limit) {
+        if (limit <= 0) return Uni.createFrom().item(List.of());
+        Document filter = new Document("status", "COMPLETED")
+                .append("completion.pendingEffects", new Document("$exists", true).append("$ne", List.of()));
+        return getCollection()
+                .find(filter, new FindOptions().limit(limit).sort(Sorts.ascending("completion.validatedAt")))
+                .collect().asList()
+                .onItem().transform(docs -> docs.stream().map(this::fromDocument).toList());
+    }
+
+    public Uni<Boolean> markCompletionEffectProcessed(String requestId, String completionId, String effect) {
+        Document filter = new Document("_id", requestId)
+                .append("status", "COMPLETED")
+                .append("completion.completionId", completionId)
+                .append("completion.pendingEffects", effect);
+        Document update = new Document("$pull", new Document("completion.pendingEffects", effect))
+                .append("$inc", new Document("revision", 1));
+        return getCollection().updateOne(filter, update)
+                .map(result -> result.getModifiedCount() == 1);
+    }
+
     public Uni<CollectionRequest> findById(String id) {
         return getCollection()
                 .find(Filters.eq("_id", id))

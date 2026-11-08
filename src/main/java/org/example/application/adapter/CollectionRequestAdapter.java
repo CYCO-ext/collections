@@ -80,4 +80,14 @@ public class CollectionRequestAdapter implements CollectionRequestPort {
     public Uni<Boolean> completeWithCode(String requestId, int codeVersion, CompletionEvidence evidence) {
         return repository.completeWithCode(requestId, codeVersion, evidence);
     }
+
+    @Override
+    public Uni<List<CollectionRequest>> findPendingCompletionEffects(int limit) {
+        return repository.findPendingCompletionEffects(limit);
+    }
+
+    @Override
+    public Uni<Boolean> markCompletionEffectProcessed(String requestId, String completionId, String effect) {
+        return repository.markCompletionEffectProcessed(requestId, completionId, effect);
+    }
 }

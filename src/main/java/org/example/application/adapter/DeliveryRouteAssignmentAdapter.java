@@ -9,6 +9,7 @@ import org.example.application.port.out.DeliveryRouteAssignmentPort;
 import org.example.infrastructure.repository.DeliveryRouteAssignmentRepository;
 
 import java.util.List;
+import java.time.LocalDateTime;
 
 @Singleton
 public class DeliveryRouteAssignmentAdapter implements DeliveryRouteAssignmentPort {
@@ -38,5 +39,15 @@ public class DeliveryRouteAssignmentAdapter implements DeliveryRouteAssignmentPo
     @Override
     public Uni<List<DeliveryRouteAssignment>> findByDeliverymanIdAndStatuses(String deliverymanId, List<RouteAssignmentStatus> statuses) {
         return repository.findByDeliverymanIdAndStatuses(deliverymanId, statuses);
+    }
+
+    @Override
+    public Uni<List<DeliveryRouteAssignment>> findByCollectionRequestId(String collectionRequestId) {
+        return repository.findByCollectionRequestId(collectionRequestId);
+    }
+
+    @Override
+    public Uni<Boolean> markStopCompleted(String assignmentId, String collectionRequestId, LocalDateTime completedAt) {
+        return repository.markStopCompleted(assignmentId, collectionRequestId, completedAt);
     }
 }

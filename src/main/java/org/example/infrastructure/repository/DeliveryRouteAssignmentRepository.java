@@ -69,6 +69,22 @@ public class DeliveryRouteAssignmentRepository {
                 .onItem().transform(docs -> docs.stream().map(this::fromDocument).toList());
     }
 
+    public Uni<List<DeliveryRouteAssignment>> findByCollectionRequestId(String collectionRequestId) {
+        return getCollection()
+                .find(Filters.eq("assignedCollectionRequestIds", collectionRequestId))
+                .collect().asList()
+                .onItem().transform(docs -> docs.stream().map(this::fromDocument).toList());
+    }
+
+    public Uni<Boolean> markStopCompleted(String assignmentId, String collectionRequestId, LocalDateTime completedAt) {
+        Document filter = new Document("_id", assignmentId)
+                .append("assignedCollectionRequestIds", collectionRequestId);
+        Document update = new Document("$addToSet", new Document("completedCollectionRequestIds", collectionRequestId))
+                .append("$set", new Document("updatedAt", toDate(completedAt)));
+        return getCollection().updateOne(filter, update)
+                .map(result -> result.getMatchedCount() == 1);
+    }
+
     private Document toDocument(DeliveryRouteAssignment assignment) {
         return new Document()
                 .append("_id", assignment.id())

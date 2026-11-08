@@ -72,6 +72,28 @@ public class CompletionRequestPortFixture implements CollectionRequestPort {
         return Uni.createFrom().item(true);
     }
 
+    @Override public Uni<List<CollectionRequest>> findPendingCompletionEffects(int limit) {
+        return Uni.createFrom().item(requests.values().stream()
+                .filter(request -> request.getCompletionEvidence() != null &&
+                        !request.getCompletionEvidence().pendingEffects().isEmpty())
+                .limit(Math.max(limit, 0)).toList());
+    }
+
+    @Override public Uni<Boolean> markCompletionEffectProcessed(String id, String completionId, String effect) {
+        CollectionRequest request = requests.get(id);
+        if (request == null || request.getCompletionEvidence() == null ||
+                !request.getCompletionEvidence().completionId().equals(completionId) ||
+                !request.getCompletionEvidence().pendingEffects().contains(effect)) {
+            return Uni.createFrom().item(false);
+        }
+        CompletionEvidence current = request.getCompletionEvidence();
+        request.setCompletionEvidence(new CompletionEvidence(current.completionId(), current.actorUserId(),
+                current.actorRole(), current.actorProfileId(), current.validatedAt(), current.codeVersion(),
+                current.idempotencyKey(), current.payloadDigest(), current.pendingEffects().stream()
+                .filter(pending -> !pending.equals(effect)).toList()));
+        return Uni.createFrom().item(true);
+    }
+
     private boolean isActive(CollectionRequest request) {
         return CollectionRequest.Status.IN_PROGRESS.equals(request.getStatus()) ||
                 CollectionRequest.Status.ON_THE_WAY.equals(request.getStatus());

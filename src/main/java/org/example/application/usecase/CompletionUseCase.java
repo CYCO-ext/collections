@@ -43,6 +43,9 @@ public class CompletionUseCase {
     @Inject
     CompletionCodeCryptoPort cryptoPort;
 
+    @Inject
+    CompletionEffectsUseCase completionEffectsUseCase;
+
     public Uni<CompletionResult> confirmWithCode(
             String requestId,
             String bearerToken,
@@ -135,7 +138,8 @@ public class CompletionUseCase {
                                     payloadDigest);
                             return collectionRequestPort.completeWithCode(requestId, codeState.version(), evidence)
                                     .flatMap(completed -> completed
-                                            ? Uni.createFrom().item(new CompletionResult(requestId, "COMPLETED", evidence.completionId()))
+                                            ? reconcileAndReturn(requestId, new CompletionResult(
+                                                    requestId, "COMPLETED", evidence.completionId()))
                                             : retryAfterLostCompletion(requestId, actor, profileId, normalizedCode, idempotencyKey));
                         }));
     }
@@ -189,7 +193,8 @@ public class CompletionUseCase {
                 Objects.equals(evidence.actorRole(), actor.role()) &&
                 Objects.equals(evidence.actorProfileId(), profileId) &&
                 Objects.equals(evidence.payloadDigest(), digest)) {
-            return Uni.createFrom().item(new CompletionResult(request.getId(), "COMPLETED", evidence.completionId()));
+            return reconcileAndReturn(request.getId(), new CompletionResult(
+                    request.getId(), "COMPLETED", evidence.completionId()));
         }
         if (Objects.equals(evidence.idempotencyKey(), idempotencyKey)) {
             return Uni.createFrom().failure(new CompletionCodeConflictException(
@@ -197,6 +202,14 @@ public class CompletionUseCase {
         }
         return Uni.createFrom().failure(new CompletionCodeConflictException(
                 "COLLECTION_ALREADY_COMPLETED", "Collection request is already completed"));
+    }
+
+    private Uni<CompletionResult> reconcileAndReturn(String requestId, CompletionResult result) {
+        return completionEffectsUseCase.processCompletion(requestId, result.completionId())
+                .onFailure().invoke(ex -> LOG.error("Completion persisted; effects remain pending requestId={} completionId={}",
+                        requestId, result.completionId(), ex))
+                .onFailure().recoverWithNull()
+                .replaceWith(result);
     }
 
     private Uni<CompletionResult> retryAfterLostCompletion(

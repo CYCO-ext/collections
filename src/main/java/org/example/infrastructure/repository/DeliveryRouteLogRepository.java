@@ -2,6 +2,7 @@ package org.example.infrastructure.repository;
 
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Sorts;
+import com.mongodb.client.model.ReplaceOptions;
 import io.quarkus.mongodb.FindOptions;
 import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
@@ -30,7 +31,9 @@ public class DeliveryRouteLogRepository {
     }
 
     public Uni<Void> append(DeliveryRouteLog log) {
-        return getCollection().insertOne(toDocument(log)).replaceWithVoid();
+        return getCollection()
+                .replaceOne(Filters.eq("_id", log.id()), toDocument(log), new ReplaceOptions().upsert(true))
+                .replaceWithVoid();
     }
 
     public Uni<List<DeliveryRouteLog>> findBySavedRouteIdAndVehicleIndex(String savedRouteId, int vehicleIndex) {

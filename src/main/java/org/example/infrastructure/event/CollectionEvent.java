@@ -12,6 +12,7 @@ public class CollectionEvent {
     private String timestamp;
     private String actorType;
     private String actorId;
+    private String completionId;
 
     @JsonCreator
     public CollectionEvent(
@@ -22,7 +23,8 @@ public class CollectionEvent {
             @JsonProperty("status") String status,
             @JsonProperty("timestamp") String timestamp,
             @JsonProperty("actorType") String actorType,
-            @JsonProperty("actorId") String actorId) {
+            @JsonProperty("actorId") String actorId,
+            @JsonProperty("completionId") String completionId) {
         this.eventType = eventType;
         this.requestId = requestId;
         this.generatorId = generatorId;
@@ -31,6 +33,7 @@ public class CollectionEvent {
         this.timestamp = timestamp;
         this.actorType = actorType;
         this.actorId = actorId;
+        this.completionId = completionId;
     }
 
     public CollectionEvent() {
@@ -98,5 +101,13 @@ public class CollectionEvent {
 
     public void setActorId(String actorId) {
         this.actorId = actorId;
+    }
+
+    public String getCompletionId() {
+        return completionId;
+    }
+
+    public void setCompletionId(String completionId) {
+        this.completionId = completionId;
     }
 }

@@ -34,4 +34,8 @@ public interface CollectionRequestPort {
                                                   LocalDateTime blockedUntil, int maxAttempts);
 
     Uni<Boolean> completeWithCode(String requestId, int codeVersion, CompletionEvidence evidence);
+
+    Uni<List<CollectionRequest>> findPendingCompletionEffects(int limit);
+
+    Uni<Boolean> markCompletionEffectProcessed(String requestId, String completionId, String effect);
 }

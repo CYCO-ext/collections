@@ -44,6 +44,7 @@ class CompletionWithCodeUseCaseTest {
     @Mock private EventPort eventPort;
     @Mock private CloseSavedRoutesUseCase closeSavedRoutesUseCase;
     @Mock private CollectionStatusNotificationUseCase notificationUseCase;
+    @Mock private CompletionEffectsUseCase completionEffectsUseCase;
 
     @BeforeEach
     void setUp() {
@@ -54,6 +55,7 @@ class CompletionWithCodeUseCaseTest {
         useCase.eventPort = eventPort;
         useCase.closeSavedRoutesUseCase = closeSavedRoutesUseCase;
         useCase.notificationUseCase = notificationUseCase;
+        useCase.completionEffectsUseCase = completionEffectsUseCase;
         request = new CollectionRequest("generator-1", "address-1", List.of("paper"), 10.0);
         request.setId(REQUEST_ID);
         request.setSelectedCollectorId("collector-1");
@@ -63,6 +65,7 @@ class CompletionWithCodeUseCaseTest {
                 "user-1", "WASTE_COLLECTOR", null, "collector-1", null, null);
         lenient().when(authenticatedActorPort.resolve(BEARER)).thenReturn(Uni.createFrom().item(collector));
         lenient().when(collectionRequestPort.findById(REQUEST_ID)).thenReturn(Uni.createFrom().item(request));
+        lenient().when(completionEffectsUseCase.processCompletion(any(), any())).thenReturn(Uni.createFrom().voidItem());
     }
 
     @Test

@@ -5,6 +5,8 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.example.application.usecase.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 
 @Path("/generators")
+@Tag(name = "Generators", description = "Create collection requests and manage generator notifications")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class GeneratorResource {
@@ -27,6 +30,7 @@ public class GeneratorResource {
     @Inject
     RegisterGeneratorNotificationTokenUseCase registerGeneratorNotificationTokenUseCase;
 
+    @Operation(summary = "Create a collection request")
     @POST
     @Path("/requests")
     public Uni<Response> createRequest(CreateRequestDTO dto) {
@@ -45,6 +49,7 @@ public class GeneratorResource {
                 });
     }
 
+    @Operation(summary = "Find nearby collectors for a collection request")
     @GET
     @Path("/requests/{requestId}/collectors")
     public Uni<Response> getNearbyCollectors(@PathParam("requestId") String requestId) {
@@ -64,6 +69,7 @@ public class GeneratorResource {
                 });
     }
 
+    @Operation(summary = "Register or update a generator notification token")
     @PUT
     @Path("/{generatorId}/notification-token")
     public Uni<Response> registerNotificationToken(
@@ -83,6 +89,7 @@ public class GeneratorResource {
                 });
     }
 
+    @Operation(summary = "Cancel a collection request")
     @POST
     @Path("/requests/{requestId}/cancel")
     public Uni<Response> cancelRequest(

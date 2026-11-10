@@ -5,6 +5,8 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.example.application.route.RouteMapModels.GetSavedRouteMapQuery;
 import org.example.application.route.RouteModels.*;
 import org.example.application.deliveryman.DeliverymanModels.AssignDeliveryRouteCommand;
@@ -17,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 
 @Path("/collectors/routes")
+@Tag(name = "Collector routes", description = "Optimize, save and manage collector routes")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class CollectorRouteResource {
@@ -44,6 +47,7 @@ public class CollectorRouteResource {
     @Inject
     DeliverymanUseCase deliverymanUseCase;
 
+    @Operation(summary = "Suggest optimized collection routes")
     @POST
     @Path("/suggest")
     public Uni<Response> suggestRoutes(RouteOptimizationRequestDTO dto) {
@@ -62,6 +66,7 @@ public class CollectorRouteResource {
                 });
     }
 
+    @Operation(summary = "Save a route suggestion")
     @POST
     @Path("/save")
     public Uni<Response> saveRoute(SaveRouteRequestDTO dto) {
@@ -84,6 +89,7 @@ public class CollectorRouteResource {
                 });
     }
 
+    @Operation(summary = "List saved routes")
     @GET
     @Path("/saved")
     public Uni<Response> listSavedRoutes() {
@@ -96,6 +102,7 @@ public class CollectorRouteResource {
                 });
     }
 
+    @Operation(summary = "Get a saved route map")
     @GET
     @Path("/saved/{savedRouteId}/map")
     public Uni<Response> getSavedRouteMap(@PathParam("savedRouteId") String savedRouteId,
@@ -121,6 +128,7 @@ public class CollectorRouteResource {
                 });
     }
 
+    @Operation(summary = "Move a collection request between route vehicles")
     @POST
     @Path("/saved/{savedRouteId}/move-request")
     public Uni<Response> moveRouteRequest(@PathParam("savedRouteId") String savedRouteId, MoveRouteRequestDTO dto) {
@@ -145,6 +153,7 @@ public class CollectorRouteResource {
                 });
     }
 
+    @Operation(summary = "Assign a deliveryman to a saved route vehicle")
     @POST
     @Path("/saved/{savedRouteId}/vehicles/{vehicleIndex}/deliveryman")
     public Uni<Response> assignDeliveryman(
@@ -171,6 +180,7 @@ public class CollectorRouteResource {
                 });
     }
 
+    @Operation(summary = "Delete a saved route")
     @DELETE
     @Path("/saved/{savedRouteId}")
     public Uni<Response> deleteSavedRoute(@PathParam("savedRouteId") String savedRouteId) {

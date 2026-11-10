@@ -11,6 +11,8 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.example.application.deliveryman.DeliverymanModels.AssignDeliveryRouteCommand;
 import org.example.application.deliveryman.DeliverymanModels.FailStopCommand;
 import org.example.application.deliveryman.DeliverymanModels.DeliveryRouteAssignment;
@@ -25,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Path("/")
+@Tag(name = "Deliverymen", description = "Synchronize deliverymen and manage route assignments")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class DeliverymanResource {
@@ -33,6 +36,7 @@ public class DeliverymanResource {
     @Inject
     DeliverymanUseCase deliverymanUseCase;
 
+    @Operation(summary = "Synchronize a deliveryman profile")
     @POST
     @Path("/deliverymen/sync")
     public Uni<Response> syncDeliveryman(SyncDeliverymanCommand command) {
@@ -46,6 +50,7 @@ public class DeliverymanResource {
                 });
     }
 
+    @Operation(summary = "List deliverymen for a collector")
     @GET
     @Path("/collectors/{collectorId}/deliverymen")
     public Uni<Response> listDeliverymen(@PathParam("collectorId") String collectorId) {
@@ -59,6 +64,7 @@ public class DeliverymanResource {
                 });
     }
 
+    @Operation(summary = "Assign a deliveryman to a route")
     @POST
     @Path("/collectors/{collectorId}/routes/{savedRouteId}/assign")
     public Uni<Response> assignRoute(
@@ -83,6 +89,7 @@ public class DeliverymanResource {
                 });
     }
 
+    @Operation(summary = "List a deliveryman's route assignments")
     @GET
     @Path("/deliverymen/{deliverymanId}/assignments")
     public Uni<Response> listAssignments(@PathParam("deliverymanId") String deliverymanId) {
@@ -96,6 +103,7 @@ public class DeliverymanResource {
                 });
     }
 
+    @Operation(summary = "Start a route assignment")
     @POST
     @Path("/deliverymen/{deliverymanId}/assignments/{assignmentId}/start")
     public Uni<Response> startAssignment(
@@ -113,6 +121,7 @@ public class DeliverymanResource {
                 });
     }
 
+    @Operation(summary = "Complete a route stop using the completion code")
     @POST
     @Path("/deliverymen/{deliverymanId}/assignments/{assignmentId}/stops/{collectionRequestId}/complete")
     public Uni<Response> completeStop(
@@ -179,6 +188,7 @@ public class DeliverymanResource {
     public record CompletionErrorResponse(CompletionError error) { }
     public record CompletionError(String code, String message, Integer retryAfterSeconds) { }
 
+    @Operation(summary = "Mark a route stop as failed")
     @POST
     @Path("/deliverymen/{deliverymanId}/assignments/{assignmentId}/stops/{collectionRequestId}/fail")
     public Uni<Response> failStop(
@@ -198,6 +208,7 @@ public class DeliverymanResource {
                 });
     }
 
+    @Operation(summary = "Finish a route assignment")
     @POST
     @Path("/deliverymen/{deliverymanId}/assignments/{assignmentId}/finish")
     public Uni<Response> finishAssignment(

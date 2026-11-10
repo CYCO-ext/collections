@@ -5,6 +5,8 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.example.application.usecase.CollectionRequestNotFoundException;
 import org.example.application.usecase.CompletionCodeConflictException;
 import org.example.application.usecase.CompletionCodeForbiddenException;
@@ -15,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Path("/requests")
+@Tag(name = "Collection completion", description = "Confirm collection completion by generator or collector")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class CompletionResource {
@@ -24,6 +27,7 @@ public class CompletionResource {
     @Inject
     CompletionUseCase completionUseCase;
 
+    @Operation(summary = "Confirm completion as the generator")
     @POST
     @Path("/{requestId}/confirm-generator")
     public Response confirmGeneratorCompletion(@PathParam("requestId") String requestId) {
@@ -32,6 +36,7 @@ public class CompletionResource {
                 "A valid completion code is required to finish this collection");
     }
 
+    @Operation(summary = "Confirm completion as the collector using the completion code")
     @POST
     @Path("/{requestId}/confirm-collector")
     public Uni<Response> confirmCollectorCompletion(

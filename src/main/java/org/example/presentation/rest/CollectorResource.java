@@ -5,6 +5,8 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.example.application.usecase.CancelCollectionRequestUseCase;
 import org.example.application.usecase.CollectionCancellationConflictException;
 import org.example.application.usecase.CollectionCancellationForbiddenException;
@@ -19,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Path("/collectors")
+@Tag(name = "Collectors", description = "Manage collector responses and collection status")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class CollectorResource {
@@ -40,6 +43,7 @@ public class CollectorResource {
     @Inject
     MarkCollectorOnTheWayUseCase markCollectorOnTheWayUseCase;
 
+    @Operation(summary = "Get a collector address")
     @GET
     @Path("/{collectorId}/address")
     public Uni<Response> getCollectorAddress(@PathParam("collectorId") String collectorId) {
@@ -59,6 +63,7 @@ public class CollectorResource {
                 });
     }
 
+    @Operation(summary = "Select a collector for a collection request")
     @POST
     @Path("/requests/{requestId}/select")
     public Uni<Response> selectCollector(
@@ -74,6 +79,7 @@ public class CollectorResource {
                 });
     }
 
+    @Operation(summary = "Accept a collection request")
     @POST
     @Path("/requests/{requestId}/accept")
     public Uni<Response> acceptRequest(@PathParam("requestId") String requestId) {
@@ -87,6 +93,7 @@ public class CollectorResource {
                 });
     }
 
+    @Operation(summary = "Reject a collection request")
     @POST
     @Path("/requests/{requestId}/reject")
     public Uni<Response> rejectRequest(@PathParam("requestId") String requestId) {
@@ -100,6 +107,7 @@ public class CollectorResource {
                 });
     }
 
+    @Operation(summary = "Mark the collector as on the way")
     @POST
     @Path("/requests/{requestId}/on-the-way")
     public Uni<Response> markOnTheWay(
@@ -124,6 +132,7 @@ public class CollectorResource {
                 });
     }
 
+    @Operation(summary = "Cancel a collection request as the collector")
     @POST
     @Path("/requests/{requestId}/cancel")
     public Uni<Response> cancelRequest(

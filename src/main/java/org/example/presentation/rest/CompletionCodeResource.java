@@ -10,6 +10,8 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.example.application.usecase.CollectionRequestNotFoundException;
 import org.example.application.usecase.CompletionCodeConflictException;
 import org.example.application.usecase.CompletionCodeForbiddenException;
@@ -19,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Path("/requests")
+@Tag(name = "Completion codes", description = "Issue and validate collection completion codes")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class CompletionCodeResource {
@@ -27,6 +30,7 @@ public class CompletionCodeResource {
     @Inject
     CompletionCodeUseCase completionCodeUseCase;
 
+    @Operation(summary = "Issue or read a collection completion code")
     @POST
     @Path("/{requestId}/completion-code")
     public Uni<Response> issueOrRead(

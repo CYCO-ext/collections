@@ -10,6 +10,8 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.example.application.usecase.CollectionAddressNotFoundException;
 import org.example.application.usecase.CollectionNotFoundException;
 import org.example.application.usecase.GetCollectionByIdUseCase;
@@ -18,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Path("/collections")
+@Tag(name = "Collections", description = "Search and retrieve collection requests")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class CollectionSearchResource {
@@ -29,6 +32,7 @@ public class CollectionSearchResource {
     @Inject
     GetCollectionByIdUseCase getCollectionByIdUseCase;
 
+    @Operation(summary = "Search collection requests")
     @GET
     @Path("/search")
     public Uni<Response> search(
@@ -48,6 +52,7 @@ public class CollectionSearchResource {
                 });
     }
 
+    @Operation(summary = "Get a collection request by ID")
     @GET
     @Path("/{id}")
     public Uni<Response> getById(@PathParam("id") String id) {

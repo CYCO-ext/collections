@@ -1,0 +1,617 @@
+openapi: 3.0.3
+info:
+  title: Cyco Collections API
+  version: 1.0.0
+  description: API de coletas, rotas, entregadores, endereços e confirmação de entregas.
+servers:
+  - url: http://localhost:8080/api
+tags:
+  - name: Generators
+  - name: Collectors
+  - name: Collections
+  - name: Completion codes
+  - name: Collection completion
+  - name: Collector routes
+  - name: Deliverymen
+paths:
+  /generators/requests:
+    post:
+      tags: [Generators]
+      summary: Create a collection request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRequest'
+      responses:
+        '201':
+          description: Collection request created
+          content:
+            application/json:
+              schema: { type: object }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /generators/requests/{requestId}/collectors:
+    get:
+      tags: [Generators]
+      summary: Find nearby collectors for a collection request
+      parameters:
+        - $ref: '#/components/parameters/requestId'
+      responses:
+        '200':
+          description: Eligible nearby collectors
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /generators/{generatorId}/notification-token:
+    put:
+      tags: [Generators]
+      summary: Register or update a generator notification token
+      parameters:
+        - $ref: '#/components/parameters/generatorId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationToken'
+      responses:
+        '204': { description: Token saved }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /generators/requests/{requestId}/cancel:
+    post:
+      tags: [Generators]
+      summary: Cancel a collection request as the generator
+      parameters:
+        - $ref: '#/components/parameters/requestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [generatorId]
+              properties:
+                generatorId: { type: string }
+      responses:
+        '200': { description: Request cancelled }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /collectors/{collectorId}/address:
+    get:
+      tags: [Collectors]
+      summary: Get a collector address
+      parameters:
+        - $ref: '#/components/parameters/collectorId'
+      responses:
+        '200':
+          description: Collector address
+          content:
+            application/json:
+              schema: { type: object }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /collectors/requests/{requestId}/select:
+    post:
+      tags: [Collectors]
+      summary: Select a collector for a collection request
+      parameters:
+        - $ref: '#/components/parameters/requestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [collectorId]
+              properties:
+                collectorId: { type: string }
+      responses:
+        '200': { description: Collector selected }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /collectors/requests/{requestId}/accept:
+    post:
+      tags: [Collectors]
+      summary: Accept a collection request
+      parameters:
+        - $ref: '#/components/parameters/requestId'
+      responses:
+        '200': { description: Request accepted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /collectors/requests/{requestId}/reject:
+    post:
+      tags: [Collectors]
+      summary: Reject a collection request
+      parameters:
+        - $ref: '#/components/parameters/requestId'
+      responses:
+        '200': { description: Request rejected }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /collectors/requests/{requestId}/on-the-way:
+    post:
+      tags: [Collectors]
+      summary: Mark the collector as on the way
+      parameters:
+        - $ref: '#/components/parameters/requestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [collectorId]
+              properties:
+                collectorId: { type: string }
+      responses:
+        '200': { description: Request marked as on the way }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /collectors/requests/{requestId}/cancel:
+    post:
+      tags: [Collectors]
+      summary: Cancel a collection request as the collector
+      parameters:
+        - $ref: '#/components/parameters/requestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [collectorId]
+              properties:
+                collectorId: { type: string }
+      responses:
+        '200': { description: Request cancelled }
+        '403': { description: Collector is not allowed to cancel this request }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /requests/{requestId}/completion-code:
+    post:
+      tags: [Completion codes]
+      summary: Issue or read a collection completion code
+      parameters:
+        - $ref: '#/components/parameters/requestId'
+        - $ref: '#/components/parameters/authorization'
+      responses:
+        '200':
+          description: Completion code
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requestId: { type: string }
+                  code: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: User is not allowed to access this code }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /requests/{requestId}/confirm-generator:
+    post:
+      tags: [Collection completion]
+      summary: Confirm completion as the generator
+      parameters:
+        - $ref: '#/components/parameters/requestId'
+      responses:
+        '409':
+          description: Completion code is required to finish this collection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /requests/{requestId}/confirm-collector:
+    post:
+      tags: [Collection completion]
+      summary: Confirm completion as the collector using the completion code
+      parameters:
+        - $ref: '#/components/parameters/requestId'
+        - $ref: '#/components/parameters/authorization'
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        '200':
+          description: Collection completion registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Completion' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: User is not allowed to confirm this collection }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { description: Completion code is invalid }
+  /collections/search:
+    get:
+      tags: [Collections]
+      summary: Search collection requests
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+        - name: collectorId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: generatorId
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Matching collection requests
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /collections/{id}:
+    get:
+      tags: [Collections]
+      summary: Get a collection request by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Collection request
+          content:
+            application/json:
+              schema: { type: object }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /collectors/routes/suggest:
+    post:
+      tags: [Collector routes]
+      summary: Suggest optimized collection routes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RouteOptimizationRequest' }
+      responses:
+        '200':
+          description: Optimized route suggestion
+          content:
+            application/json:
+              schema: { type: object }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /collectors/routes/save:
+    post:
+      tags: [Collector routes]
+      summary: Save a route suggestion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveRouteRequest' }
+      responses:
+        '201': { description: Route suggestion saved }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /collectors/routes/saved:
+    get:
+      tags: [Collector routes]
+      summary: List saved routes
+      responses:
+        '200':
+          description: Saved routes
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+  /collectors/routes/saved/{savedRouteId}/map:
+    get:
+      tags: [Collector routes]
+      summary: Get a saved route map
+      parameters:
+        - $ref: '#/components/parameters/savedRouteId'
+        - name: vehicleIndex
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        '200': { description: Route map returned }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { description: Map provider error }
+        '504': { description: Map provider timeout }
+  /collectors/routes/saved/{savedRouteId}/move-request:
+    post:
+      tags: [Collector routes]
+      summary: Move a collection request between route vehicles
+      parameters:
+        - $ref: '#/components/parameters/savedRouteId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MoveRouteRequest' }
+      responses:
+        '200': { description: Request moved between route vehicles }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /collectors/routes/saved/{savedRouteId}/vehicles/{vehicleIndex}/deliveryman:
+    post:
+      tags: [Collector routes]
+      summary: Assign a deliveryman to a saved route vehicle
+      parameters:
+        - $ref: '#/components/parameters/savedRouteId'
+        - name: vehicleIndex
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignDeliveryman' }
+      responses:
+        '201': { description: Deliveryman assigned to route vehicle }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /collectors/routes/saved/{savedRouteId}:
+    delete:
+      tags: [Collector routes]
+      summary: Delete a saved route
+      parameters:
+        - $ref: '#/components/parameters/savedRouteId'
+      responses:
+        '204': { description: Saved route deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /deliverymen/sync:
+    post:
+      tags: [Deliverymen]
+      summary: Synchronize a deliveryman profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: Deliveryman synchronized }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /collectors/{collectorId}/deliverymen:
+    get:
+      tags: [Deliverymen]
+      summary: List deliverymen for a collector
+      parameters:
+        - $ref: '#/components/parameters/collectorId'
+      responses:
+        '200':
+          description: Deliverymen
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+  /collectors/{collectorId}/routes/{savedRouteId}/assign:
+    post:
+      tags: [Deliverymen]
+      summary: Assign a saved route to a deliveryman
+      parameters:
+        - $ref: '#/components/parameters/collectorId'
+        - $ref: '#/components/parameters/savedRouteId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deliverymanId, vehicleIndex]
+              properties:
+                deliverymanId: { type: string }
+                vehicleIndex: { type: integer }
+      responses:
+        '201': { description: Route assigned }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /deliverymen/{deliverymanId}/assignments:
+    get:
+      tags: [Deliverymen]
+      summary: List deliveryman route assignments
+      parameters:
+        - $ref: '#/components/parameters/deliverymanId'
+      responses:
+        '200':
+          description: Route assignments
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+  /deliverymen/{deliverymanId}/assignments/{assignmentId}/start:
+    post:
+      tags: [Deliverymen]
+      summary: Start a route assignment
+      parameters:
+        - $ref: '#/components/parameters/deliverymanId'
+        - $ref: '#/components/parameters/assignmentId'
+      responses:
+        '200': { description: Route assignment started }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /deliverymen/{deliverymanId}/assignments/{assignmentId}/stops/{collectionRequestId}/complete:
+    post:
+      tags: [Deliverymen]
+      summary: Complete a route stop using its confirmation code
+      parameters:
+        - $ref: '#/components/parameters/deliverymanId'
+        - $ref: '#/components/parameters/assignmentId'
+        - $ref: '#/components/parameters/collectionRequestId'
+        - $ref: '#/components/parameters/authorization'
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        '200': { description: Route stop completed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { description: Confirmation code is invalid }
+  /deliverymen/{deliverymanId}/assignments/{assignmentId}/stops/{collectionRequestId}/fail:
+    post:
+      tags: [Deliverymen]
+      summary: Mark a route stop as failed
+      parameters:
+        - $ref: '#/components/parameters/deliverymanId'
+        - $ref: '#/components/parameters/assignmentId'
+        - $ref: '#/components/parameters/collectionRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: Route stop marked as failed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /deliverymen/{deliverymanId}/assignments/{assignmentId}/finish:
+    post:
+      tags: [Deliverymen]
+      summary: Finish a route assignment
+      parameters:
+        - $ref: '#/components/parameters/deliverymanId'
+        - $ref: '#/components/parameters/assignmentId'
+      responses:
+        '200': { description: Route assignment finished }
+        '409': { $ref: '#/components/responses/Conflict' }
+components:
+  parameters:
+    requestId:
+      name: requestId
+      in: path
+      required: true
+      schema: { type: string }
+    generatorId:
+      name: generatorId
+      in: path
+      required: true
+      schema: { type: string }
+    collectorId:
+      name: collectorId
+      in: path
+      required: true
+      schema: { type: string }
+    savedRouteId:
+      name: savedRouteId
+      in: path
+      required: true
+      schema: { type: string }
+    deliverymanId:
+      name: deliverymanId
+      in: path
+      required: true
+      schema: { type: string }
+    assignmentId:
+      name: assignmentId
+      in: path
+      required: true
+      schema: { type: string }
+    collectionRequestId:
+      name: collectionRequestId
+      in: path
+      required: true
+      schema: { type: string }
+    authorization:
+      name: Authorization
+      in: header
+      required: true
+      schema: { type: string, example: 'Bearer <token>' }
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { type: string }
+    Unauthorized:
+      description: Authentication required or token invalid
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { type: string }
+    Conflict:
+      description: Request conflicts with the current resource state
+      content:
+        application/json:
+          schema: { type: string }
+  schemas:
+    CreateRequest:
+      type: object
+      required: [generatorId, addressId, materialIds, weight]
+      properties:
+        generatorId: { type: string }
+        addressId: { type: string }
+        materialIds: { type: array, items: { type: string } }
+        weight: { type: number, format: double }
+    NotificationToken:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string }
+        platform: { type: string }
+    RouteOptimizationRequest:
+      type: object
+      description: Route optimization input. Vehicles, start location, filters and options are accepted by the endpoint.
+      required: [collectorId, vehicles]
+      properties:
+        collectorId: { type: string }
+        vehicles: { type: array, items: { type: object } }
+        start: { type: object }
+        endAtStart: { type: boolean, default: true }
+        candidateRequestIds: { type: array, items: { type: string } }
+        filters: { type: object }
+        options: { type: object }
+    SaveRouteRequest:
+      type: object
+      required: [collectorId, source, suggestion]
+      properties:
+        collectorId: { type: string }
+        source: { type: string }
+        suggestion: { type: object }
+    MoveRouteRequest:
+      type: object
+      required: [collectionRequestId, sourceVehicleIndex, targetVehicleIndex]
+      properties:
+        collectionRequestId: { type: string }
+        sourceVehicleIndex: { type: integer }
+        targetVehicleIndex: { type: integer }
+    AssignDeliveryman:
+      type: object
+      required: [collectorId, deliverymanId]
+      properties:
+        collectorId: { type: string }
+        deliverymanId: { type: string }
+    Completion:
+      type: object
+      properties:
+        requestId: { type: string }
+        status: { type: string }
+        completionId: { type: string }
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            retryAfterSeconds: { type: integer, nullable: true }

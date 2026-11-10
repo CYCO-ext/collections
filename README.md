@@ -26,7 +26,7 @@ A API REST usa o prefixo `/api`.
 
 ### Swagger / OpenAPI
 
-Com o serviço em execução na porta `8080`, a interface interativa fica em `http://localhost:8080/q/swagger-ui` e o documento OpenAPI em `http://localhost:8080/q/openapi`. Os recursos REST são descritos com tags e resumos de operação.
+Com o serviço em execução na porta `8080`, a interface interativa fica em `http://localhost:8080/q/swagger-ui` e o documento OpenAPI em `http://localhost:8080/q/openapi`. O arquivo OpenAPI estático para importar em ferramentas Swagger fica em [`openapi.yml`](openapi.yml). Os recursos REST são descritos com tags e resumos de operação.
 
 | Metodo   | URL                                                        | Descricao                                                                                          |
 |----------|------------------------------------------------------------|----------------------------------------------------------------------------------------------------|

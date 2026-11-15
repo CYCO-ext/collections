@@ -49,6 +49,10 @@ jobs:
           test -n "$CA_PEM" || (echo "Missing secret CA_PEM" && exit 1)
           test -n "$FIREBASE_CREDENTIALS_JSON" || (echo "Missing secret FIREBASE_CREDENTIALS_JSON" && exit 1)
           test -n "$QUARKUS_MONGODB_CONNECTION_STRING" || (echo "Missing secret QUARKUS_MONGODB_CONNECTION_STRING" && exit 1)
+          case "$QUARKUS_MONGODB_CONNECTION_STRING" in
+            mongodb://*|mongodb+srv://*) ;;
+            *) echo "Secret QUARKUS_MONGODB_CONNECTION_STRING must start with mongodb:// or mongodb+srv:// (do not include quotes or leading spaces)"; exit 1 ;;
+          esac
           test -n "$QUARKUS_KAFKA_BOOTSTRAP_SERVERS" || (echo "Missing secret QUARKUS_KAFKA_BOOTSTRAP_SERVERS" && exit 1)
           test -n "$KAFKA_USERNAME" || (echo "Missing secret KAFKA_USERNAME" && exit 1)
           test -n "$KAFKA_PASSWORD" || (echo "Missing secret KAFKA_PASSWORD" && exit 1)

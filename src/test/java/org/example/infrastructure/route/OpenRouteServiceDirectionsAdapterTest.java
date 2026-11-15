@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -43,7 +44,7 @@ class OpenRouteServiceDirectionsAdapterTest {
 
         adapter = new OpenRouteServiceDirectionsAdapter();
         adapter.baseUrl = "http://localhost:" + server.getAddress().getPort();
-        adapter.apiKey = "test-api-key";
+        adapter.apiKey = Optional.of("test-api-key");
         adapter.timeoutMs = 5000;
         adapter.objectMapper = new ObjectMapper();
         adapter.init();

@@ -41,7 +41,7 @@ class GoogleGeocodingClientTest {
         client = new GoogleGeocodingClient();
         client.mapper = new ObjectMapper();
         client.baseUrl = "http://localhost:" + server.getAddress().getPort();
-        client.apiKey = "google-key";
+        client.apiKey = Optional.of("google-key");
         client.timeoutMs = 1000;
         client.country = "Brazil";
     }
@@ -136,7 +136,7 @@ class GoogleGeocodingClientTest {
 
     @Test
     void geocodeReturnsEmptyWhenApiKeyIsMissing() {
-        client.apiKey = "";
+        client.apiKey = Optional.empty();
 
         Optional<GoogleGeocodingClient.Coordinates> result = client.geocode(new GoogleGeocodingClient.GoogleGeocodingAddress(
                 "Praça da Sé",

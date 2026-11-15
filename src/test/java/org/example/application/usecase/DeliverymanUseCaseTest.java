@@ -90,6 +90,8 @@ class DeliverymanUseCaseTest {
                 .thenReturn(Uni.createFrom().item(List.of()));
         lenient().when(collectionRequestPort.findById(any()))
                 .thenReturn(Uni.createFrom().nullItem());
+        lenient().when(assignmentPort.findByCollectionRequestId(any()))
+                .thenReturn(Uni.createFrom().item(List.of()));
     }
 
     @Test

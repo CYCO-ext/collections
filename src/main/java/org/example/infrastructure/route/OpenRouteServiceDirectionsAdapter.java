@@ -19,6 +19,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletionException;
 
 @Singleton
@@ -27,8 +28,8 @@ public class OpenRouteServiceDirectionsAdapter implements OpenRouteServiceDirect
     @ConfigProperty(name = "openrouteservice.base-url", defaultValue = "https://api.openrouteservice.org")
     String baseUrl;
 
-    @ConfigProperty(name = "openrouteservice.api-key", defaultValue = "")
-    String apiKey;
+    @ConfigProperty(name = "openrouteservice.api-key")
+    Optional<String> apiKey;
 
     @ConfigProperty(name = "openrouteservice.timeout-ms", defaultValue = "10000")
     long timeoutMs;
@@ -47,13 +48,14 @@ public class OpenRouteServiceDirectionsAdapter implements OpenRouteServiceDirect
 
     @Override
     public Uni<JsonNode> fetchDrivingCarGeoJson(List<RouteCoordinate> coordinates) {
-        if (apiKey == null || apiKey.isBlank()) {
+        String configuredApiKey = apiKey.orElse("");
+        if (configuredApiKey.isBlank()) {
             return Uni.createFrom().failure(new OpenRouteServiceException("OpenRouteService API key is not configured", 500, false));
         }
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(normalizedBaseUrl() + "/v2/directions/driving-car/geojson"))
                 .timeout(Duration.ofMillis(timeoutMs))
-                .header("Authorization", apiKey)
+                .header("Authorization", configuredApiKey)
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/geo+json, application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body(coordinates)))

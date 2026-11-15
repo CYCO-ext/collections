@@ -29,8 +29,8 @@ public class GoogleGeocodingClient {
     @ConfigProperty(name = "google.geocoding.base-url", defaultValue = "https://maps.googleapis.com")
     String baseUrl;
 
-    @ConfigProperty(name = "google.geocoding.api-key", defaultValue = "")
-    String apiKey;
+    @ConfigProperty(name = "google.geocoding.api-key")
+    Optional<String> apiKey;
 
     @ConfigProperty(name = "google.geocoding.timeout-ms", defaultValue = "5000")
     long timeoutMs;
@@ -48,7 +48,8 @@ public class GoogleGeocodingClient {
             LOG.warn("Google Geocoding skipped because address is blank");
             return Uni.createFrom().item(Optional.empty());
         }
-        if (apiKey == null || apiKey.isBlank()) {
+        String configuredApiKey = apiKey.orElse("");
+        if (configuredApiKey.isBlank()) {
             LOG.warn("Google Geocoding API key is not configured");
             return Uni.createFrom().item(Optional.empty());
         }
@@ -57,7 +58,7 @@ public class GoogleGeocodingClient {
                 + "/maps/api/geocode/json?address="
                 + encode(formattedAddress)
                 + "&key="
-                + encode(apiKey);
+                + encode(configuredApiKey);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))

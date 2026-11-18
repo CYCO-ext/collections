@@ -12,6 +12,7 @@ env:
   GAR_LOCATION: ${{ vars.GAR_LOCATION }}
   GAR_REPOSITORY: ${{ vars.GAR_REPOSITORY }}
   CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+  REGISTER_SERVICE_BASE_URL: ${{ vars.REGISTER_SERVICE_BASE_URL }}
   FIREBASE_CREDENTIALS_FILE: cyco-collection-firebase-adminsdk-fbsvc-50baaa2af1.json
 
 jobs:
@@ -38,6 +39,7 @@ jobs:
           QUARKUS_KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.QUARKUS_KAFKA_BOOTSTRAP_SERVERS }}
           KAFKA_USERNAME: ${{ secrets.KAFKA_USERNAME }}
           KAFKA_PASSWORD: ${{ secrets.KAFKA_PASSWORD }}
+          REGISTER_SERVICE_BASE_URL: ${{ vars.REGISTER_SERVICE_BASE_URL }}
         run: |
           test -n "$GCP_PROJECT_ID" || (echo "Missing repository variable GCP_PROJECT_ID" && exit 1)
           test -n "$GCP_REGION" || (echo "Missing repository variable GCP_REGION" && exit 1)
@@ -56,6 +58,11 @@ jobs:
           test -n "$QUARKUS_KAFKA_BOOTSTRAP_SERVERS" || (echo "Missing secret QUARKUS_KAFKA_BOOTSTRAP_SERVERS" && exit 1)
           test -n "$KAFKA_USERNAME" || (echo "Missing secret KAFKA_USERNAME" && exit 1)
           test -n "$KAFKA_PASSWORD" || (echo "Missing secret KAFKA_PASSWORD" && exit 1)
+          test -n "$REGISTER_SERVICE_BASE_URL" || (echo "Missing repository variable REGISTER_SERVICE_BASE_URL (public base URL of cyco-register)" && exit 1)
+          case "$REGISTER_SERVICE_BASE_URL" in
+            https://*) ;;
+            *) echo "Repository variable REGISTER_SERVICE_BASE_URL must start with https://"; exit 1 ;;
+          esac
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -94,6 +101,7 @@ jobs:
           KAFKA_PASSWORD: ${{ secrets.KAFKA_PASSWORD }}
           GOOGLE_GEOCODING_API_KEY: ${{ secrets.GOOGLE_GEOCODING_API_KEY }}
           OPENROUTESERVICE_API_KEY: ${{ secrets.OPENROUTESERVICE_API_KEY }}
+          REGISTER_SERVICE_BASE_URL: ${{ vars.REGISTER_SERVICE_BASE_URL }}
         run: |
           cat > cloud-run-env.yaml <<EOF
           FIREBASE_ENABLED: "true"
@@ -107,6 +115,7 @@ jobs:
           KAFKA_PASSWORD: "$KAFKA_PASSWORD"
           GOOGLE_GEOCODING_API_KEY: "$GOOGLE_GEOCODING_API_KEY"
           OPENROUTESERVICE_API_KEY: "$OPENROUTESERVICE_API_KEY"
+          REGISTER_SERVICE_BASE_URL: "$REGISTER_SERVICE_BASE_URL"
           EOF
 
           gcloud run deploy "$CLOUD_RUN_SERVICE" \

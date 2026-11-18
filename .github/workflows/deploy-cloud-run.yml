@@ -20,6 +20,11 @@ jobs:
     name: Build and deploy
     runs-on: ubuntu-latest
     environment: dev
+    env:
+      COMPLETION_CODE_KEY_ID: ${{ vars.COMPLETION_CODE_KEY_ID }}
+      COMPLETION_CODE_ENCRYPTION_KEY: ${{ secrets.COMPLETION_CODE_ENCRYPTION_KEY }}
+      COMPLETION_CODE_HMAC_KEY: ${{ secrets.COMPLETION_CODE_HMAC_KEY }}
+      COMPLETION_CODE_ENCRYPTION_KEY_RING: ${{ secrets.COMPLETION_CODE_ENCRYPTION_KEY_RING || 'none' }}
 
     permissions:
       contents: read
@@ -63,6 +68,37 @@ jobs:
             https://*) ;;
             *) echo "Repository variable REGISTER_SERVICE_BASE_URL must start with https://"; exit 1 ;;
           esac
+
+      - name: Validate completion code keys
+        shell: python
+        run: |
+          import base64
+          import binascii
+          import os
+
+          def validate_key(name, value):
+              try:
+                  decoded = base64.b64decode(value, validate=True)
+              except (ValueError, binascii.Error):
+                  raise SystemExit(f"{name} must be valid base64")
+              if len(decoded) != 32:
+                  raise SystemExit(f"{name} must decode to exactly 32 bytes")
+
+          key_id = os.environ["COMPLETION_CODE_KEY_ID"]
+          if not key_id.strip() or key_id == "unset":
+              raise SystemExit("Missing variable COMPLETION_CODE_KEY_ID")
+          for name in ("COMPLETION_CODE_ENCRYPTION_KEY", "COMPLETION_CODE_HMAC_KEY"):
+              validate_key(name, os.environ[name])
+          ring = os.environ["COMPLETION_CODE_ENCRYPTION_KEY_RING"]
+          if ring.strip() and ring.strip().lower() != "none":
+              seen = {key_id}
+              for entry in ring.split(","):
+                  retired_id, separator, value = entry.partition(":")
+                  retired_id = retired_id.strip()
+                  if not separator or not retired_id or retired_id in seen:
+                      raise SystemExit("Invalid COMPLETION_CODE_ENCRYPTION_KEY_RING key IDs or format")
+                  validate_key("COMPLETION_CODE_ENCRYPTION_KEY_RING entry", value.strip())
+                  seen.add(retired_id)
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -117,6 +153,16 @@ jobs:
           OPENROUTESERVICE_API_KEY: "$OPENROUTESERVICE_API_KEY"
           REGISTER_SERVICE_BASE_URL: "$REGISTER_SERVICE_BASE_URL"
           EOF
+
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open("cloud-run-env.yaml", "a") as output:
+              for name in ("COMPLETION_CODE_KEY_ID", "COMPLETION_CODE_ENCRYPTION_KEY",
+                           "COMPLETION_CODE_HMAC_KEY", "COMPLETION_CODE_ENCRYPTION_KEY_RING"):
+                  output.write(f"{name}: {json.dumps(os.environ[name])}\n")
+          PY
 
           gcloud run deploy "$CLOUD_RUN_SERVICE" \
             --project "$GCP_PROJECT_ID" \
